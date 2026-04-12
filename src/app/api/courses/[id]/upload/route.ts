@@ -32,13 +32,37 @@ export const POST = withAuth(async (req, user) => {
   }
 
   const file = formData.get('file') as File;
+  const lessonType = formData.get('type') as string;
+
+  if (!file) return apiError('لم يتم اختيار ملف', 400);
+
+  // --- Thumbnail upload ---
+  if (lessonType === 'thumbnail') {
+    const allowedImages = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedImages.includes(file.type)) {
+      return apiError('نوع الصورة غير مدعوم. المدعوم: JPEG, PNG, WebP', 400);
+    }
+    const maxImgSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxImgSize) return apiError('حجم الصورة كبير. الحد الأقصى: 5MB', 400);
+
+    const ext = path.extname(file.name || '.jpg') || '.jpg';
+    const secureFilename = `thumb_${courseId}_${crypto.randomUUID()}${ext}`;
+    const uploadDir = path.join(process.cwd(), 'public', 'thumbnails');
+    await fs.mkdir(uploadDir, { recursive: true });
+    const filePath = path.join(uploadDir, secureFilename);
+    const arrayBuf = await file.arrayBuffer();
+    await fs.writeFile(filePath, Buffer.from(arrayBuf));
+    const publicUrl = `/thumbnails/${secureFilename}`;
+    await Course.findByIdAndUpdate(courseId, { $set: { thumbnail: publicUrl } });
+    return apiSuccess({ thumbnail: publicUrl, message: 'تم رفع الصورة بنجاح' });
+  }
+
+  // --- Lesson file upload (video / pdf) ---
   const moduleIndex = parseInt(formData.get('moduleIndex') as string);
   const lessonIndex = parseInt(formData.get('lessonIndex') as string);
-  const lessonType = formData.get('type') as string;
 
   console.log('[upload] courseId:', courseId, '| module:', moduleIndex, 'lesson:', lessonIndex, '| type:', lessonType, '| file:', file?.name, '| size:', file?.size);
 
-  if (!file) return apiError('لم يتم اختيار ملف', 400);
   if (isNaN(moduleIndex) || isNaN(lessonIndex)) return apiError('فهرس الوحدة أو الدرس غير صحيح', 400);
 
   // Validate file type

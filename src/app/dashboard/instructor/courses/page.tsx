@@ -81,12 +81,20 @@ export default function InstructorCoursesPage() {
                     }`}>
                       {course.isPublished ? 'منشور' : 'مسودة'}
                     </span>
-                    <Link
-                      href={`/dashboard/instructor/courses/${course._id}`}
-                      className="text-sm text-blue-600 font-medium hover:underline"
-                    >
-                      تعديل ←
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href={`/dashboard/instructor/courses/${course._id}/stats`}
+                        className="text-sm text-purple-600 font-medium hover:underline"
+                      >
+                        إحصائيات
+                      </Link>
+                      <Link
+                        href={`/dashboard/instructor/courses/${course._id}`}
+                        className="text-sm text-blue-600 font-medium hover:underline"
+                      >
+                        تعديل ←
+                      </Link>
+                    </div>
                   </div>
                 </div>
               </div>

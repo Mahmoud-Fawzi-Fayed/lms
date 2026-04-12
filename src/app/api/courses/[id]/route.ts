@@ -137,15 +137,35 @@ export const PUT = withAuth(async (req, user) => {
     }
   }
 
+  // When updating modules, preserve existing filePaths (they are select:false so frontend never sees them)
+  if (update.modules) {
+    const existing = await Course.findById(id).select('+modules.lessons.filePath').lean() as any;
+    const filePathMap = new Map<string, string>();
+    (existing?.modules || []).forEach((mod: any) => {
+      (mod.lessons || []).forEach((lesson: any) => {
+        if (lesson._id && lesson.filePath) {
+          filePathMap.set(lesson._id.toString(), lesson.filePath);
+        }
+      });
+    });
+    update.modules = update.modules.map((mod: any) => ({
+      ...mod,
+      lessons: (mod.lessons || []).map((lesson: any) => ({
+        ...lesson,
+        ...(lesson._id && filePathMap.has(String(lesson._id))
+          ? { filePath: filePathMap.get(String(lesson._id)) }
+          : {}),
+      })),
+    }));
+  }
+
   const updated = await Course.findByIdAndUpdate(
     id,
     {
       $set: update,
       ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
     },
-    {
-    new: true,
-    }
+    { new: true }
   );
 
   return apiSuccess(updated);

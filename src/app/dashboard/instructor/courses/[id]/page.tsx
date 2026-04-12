@@ -6,6 +6,26 @@ import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 
+type LessonType = 'video' | 'pdf' | 'text';
+
+interface Lesson {
+  _id?: string;
+  title: string;
+  type: LessonType;
+  content?: string;
+  fileUrl?: string;
+  order: number;
+  isPreview: boolean;
+  videoControls?: Record<string, boolean>;
+}
+
+interface Module {
+  _id?: string;
+  title: string;
+  order: number;
+  lessons: Lesson[];
+}
+
 const instructorLinks = [
   { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
   { href: '/dashboard/instructor/courses', label: 'كورساتي', icon: '📚' },
@@ -17,33 +37,44 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
   const { id } = params;
   const { data: session, status } = useSession();
   const router = useRouter();
+
   const [course, setCourse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');  
-  const [form, setForm] = useState<any>({});
+  const [error, setError] = useState('');
+
+  const [form, setForm] = useState<any>({
+    title: '', description: '', shortDescription: '',
+    category: '', level: 'beginner', price: 0, discountPrice: 0,
+    isPublished: false, targetYear: '', thumbnail: '', modules: [] as Module[],
+  });
+
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [lessonSettings, setLessonSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState<string | null>(null);
+  const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set([0]));
 
   useEffect(() => { if (status === 'unauthenticated') router.push('/login'); }, [status]);
-  useEffect(() => { if (status === 'authenticated' && (session?.user as any)?.role !== 'instructor' && (session?.user as any)?.role !== 'admin') router.push('/dashboard'); }, [status, session]);
-
   useEffect(() => {
-    fetchCourse();
-  }, [id]);
+    if (status === 'authenticated') {
+      const role = (session?.user as any)?.role;
+      if (role !== 'instructor' && role !== 'admin') router.push('/dashboard');
+    }
+  }, [status, session]);
+
+  useEffect(() => { fetchCourse(); }, [id]);
 
   const fetchCourse = async () => {
     try {
       const res = await fetch(`/api/courses/${id}`);
       const data = await res.json();
       if (data.success) {
-        const courseData = data.data.course || data.data;
-        setCourse(courseData);
-        // Init lessonSettings from existing videoControls
+        const c = data.data.course || data.data;
+        setCourse(c);
         const settings: Record<string, any> = {};
-        (courseData.modules || []).forEach((mod: any, mi: number) => {
+        (c.modules || []).forEach((mod: any, mi: number) => {
           (mod.lessons || []).forEach((lesson: any, li: number) => {
             if (lesson.type === 'video') {
               settings[`${mi}-${li}`] = {
@@ -59,18 +90,34 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         });
         setLessonSettings(settings);
         setForm({
-          title: courseData.title,
-          description: courseData.description,
-          shortDescription: courseData.shortDescription,
-          category: courseData.category,
-          level: courseData.level,
-          price: courseData.price,
-          discountPrice: courseData.discountPrice || 0,
-          isPublished: courseData.isPublished,
-          targetYear: courseData.targetYear || '',
+          title: c.title,
+          description: c.description,
+          shortDescription: c.shortDescription || '',
+          category: c.category || '',
+          level: c.level || 'beginner',
+          price: c.price,
+          discountPrice: c.discountPrice || 0,
+          isPublished: c.isPublished,
+          targetYear: c.targetYear || '',
+          thumbnail: c.thumbnail || '',
+          modules: (c.modules || []).map((mod: any) => ({
+            _id: mod._id,
+            title: mod.title,
+            order: mod.order,
+            lessons: (mod.lessons || []).map((l: any) => ({
+              _id: l._id,
+              title: l.title,
+              type: l.type,
+              content: l.content || '',
+              fileUrl: l.fileUrl,
+              order: l.order,
+              isPreview: l.isPreview || false,
+              videoControls: l.videoControls,
+            })),
+          })),
         });
       }
-    } catch (error) {
+    } catch {
       console.error('Failed to fetch course');
     } finally {
       setLoading(false);
@@ -99,43 +146,105 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
     }
   };
 
-  const handleFileUpload = async (moduleIndex: number, lessonIndex: number, file: File, lessonType: string) => {
-    const MAX_SIZE = lessonType === 'video' ? 500 * 1024 * 1024 : 50 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
-      setUploadError(`حجم الملف كبير جداً. الحد الأقصى: ${lessonType === 'video' ? '500' : '50'} MB`);
-      return;
-    }
-
-    const key = `${moduleIndex}-${lessonIndex}`;
-    setUploadingKey(key);
+  const handleThumbnailUpload = async (file: File) => {
+    setUploadingThumbnail(true);
     setUploadError('');
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('moduleIndex', moduleIndex.toString());
-    formData.append('lessonIndex', lessonIndex.toString());
-    formData.append('type', lessonType);
-
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('type', 'thumbnail');
     try {
-      const res = await fetch(`/api/courses/${id}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch(`/api/courses/${id}/upload`, { method: 'POST', body: fd });
       const data = await res.json();
       if (data.success) {
-        await fetchCourse();
+        setForm((prev: any) => ({ ...prev, thumbnail: data.data.thumbnail }));
       } else {
-        setUploadError(data.error || 'فشل رفع الملف');
+        setUploadError(data.error || 'فشل رفع الصورة');
       }
     } catch {
-      setUploadError('فشل رفع الملف - تأكد من الاتصال');
+      setUploadError('فشل رفع الصورة');
+    } finally {
+      setUploadingThumbnail(false);
+    }
+  };
+
+  const addModule = () => {
+    const idx = form.modules.length;
+    setForm((prev: any) => ({
+      ...prev,
+      modules: [...prev.modules, { title: `وحدة ${idx + 1}`, order: idx, lessons: [] }],
+    }));
+    setExpandedModules(prev => new Set([...prev, idx]));
+  };
+
+  const removeModule = (mi: number) => {
+    setForm((prev: any) => ({ ...prev, modules: prev.modules.filter((_: any, i: number) => i !== mi) }));
+  };
+
+  const updateModuleTitle = (mi: number, title: string) => {
+    setForm((prev: any) => {
+      const modules = [...prev.modules];
+      modules[mi] = { ...modules[mi], title };
+      return { ...prev, modules };
+    });
+  };
+
+  const addLesson = (mi: number) => {
+    setForm((prev: any) => {
+      const modules = [...prev.modules];
+      const lessons = [...(modules[mi].lessons || []), {
+        title: `درس ${(modules[mi].lessons?.length || 0) + 1}`,
+        type: 'text' as LessonType,
+        content: '',
+        order: modules[mi].lessons?.length || 0,
+        isPreview: false,
+      }];
+      modules[mi] = { ...modules[mi], lessons };
+      return { ...prev, modules };
+    });
+  };
+
+  const removeLesson = (mi: number, li: number) => {
+    setForm((prev: any) => {
+      const modules = [...prev.modules];
+      modules[mi] = { ...modules[mi], lessons: modules[mi].lessons.filter((_: any, i: number) => i !== li) };
+      return { ...prev, modules };
+    });
+  };
+
+  const updateLesson = (mi: number, li: number, updates: Partial<Lesson>) => {
+    setForm((prev: any) => {
+      const modules = [...prev.modules];
+      const lessons = [...modules[mi].lessons];
+      lessons[li] = { ...lessons[li], ...updates };
+      modules[mi] = { ...modules[mi], lessons };
+      return { ...prev, modules };
+    });
+  };
+
+  const handleFileUpload = async (mi: number, li: number, file: File, lessonType: string) => {
+    const MAX_SIZE = lessonType === 'video' ? 500 * 1024 * 1024 : 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) { setUploadError(`حجم الملف كبير. الحد الأقصى: ${lessonType === 'video' ? '500' : '50'} MB`); return; }
+    const key = `${mi}-${li}`;
+    setUploadingKey(key);
+    setUploadError('');
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('moduleIndex', mi.toString());
+    fd.append('lessonIndex', li.toString());
+    fd.append('type', lessonType);
+    try {
+      const res = await fetch(`/api/courses/${id}/upload`, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (data.success) { await fetchCourse(); } else { setUploadError(data.error || 'فشل رفع الملف'); }
+    } catch {
+      setUploadError('فشل رفع الملف');
     } finally {
       setUploadingKey(null);
     }
   };
 
-  const saveVideoSettings = async (moduleIndex: number, lessonIndex: number) => {
-    const key = `${moduleIndex}-${lessonIndex}`;
+  const saveVideoSettings = async (mi: number, li: number) => {
+    const key = `${mi}-${li}`;
     const settings = lessonSettings[key];
     if (!settings) return;
     setSavingSettings(key);
@@ -143,7 +252,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
       const res = await fetch(`/api/courses/${id}/lesson-settings`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ moduleIndex, lessonIndex, videoControls: settings }),
+        body: JSON.stringify({ moduleIndex: mi, lessonIndex: li, videoControls: settings }),
       });
       const data = await res.json();
       if (!data.success) setUploadError(data.error || 'فشل حفظ الإعدادات');
@@ -154,23 +263,23 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
     }
   };
 
-  const toggleSetting = (moduleIndex: number, lessonIndex: number, key: string, value: boolean) => {
-    const k = `${moduleIndex}-${lessonIndex}`;
-    setLessonSettings(prev => ({
-      ...prev,
-      [k]: { ...(prev[k] || {}), [key]: value },
-    }));
+  const toggleSetting = (mi: number, li: number, k: string, value: boolean) => {
+    const key = `${mi}-${li}`;
+    setLessonSettings(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [k]: value } }));
+  };
+
+  const toggleModule = (mi: number) => {
+    setExpandedModules(prev => {
+      const s = new Set(prev);
+      s.has(mi) ? s.delete(mi) : s.add(mi);
+      return s;
+    });
   };
 
   if (loading) {
     return (
       <DashboardSidebar links={instructorLinks}>
-        <div className="p-8">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 bg-slate-200 rounded w-1/3" />
-            <div className="h-64 bg-slate-200 rounded-2xl" />
-          </div>
-        </div>
+        <div className="p-8"><div className="animate-pulse space-y-4"><div className="h-8 bg-slate-200 rounded w-1/3" /><div className="h-64 bg-slate-200 rounded-2xl" /></div></div>
       </DashboardSidebar>
     );
   }
@@ -191,241 +300,242 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6">{error}</div>
         )}
+        {uploadError && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm flex items-center justify-between">
+            <span>{uploadError}</span>
+            <button onClick={() => setUploadError('')} className="text-red-400 hover:text-red-600 mr-2">✕</button>
+          </div>
+        )}
 
-        {/* Basic Info */}
+        {/* ── Section 1: Basic Info ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6 mb-6">
           <h2 className="font-semibold text-slate-900">المعلومات الأساسية</h2>
 
+          {/* Thumbnail */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">صورة الغلاف</label>
+            <div className="flex items-center gap-4">
+              <div className="w-32 h-20 rounded-xl overflow-hidden bg-gradient-to-bl from-blue-400 to-purple-500 flex items-center justify-center flex-shrink-0">
+                {form.thumbnail ? (
+                  <img src={form.thumbnail} alt="thumbnail" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl">📚</span>
+                )}
+              </div>
+              <div>
+                <label className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl cursor-pointer transition-colors ${uploadingThumbnail ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
+                  {uploadingThumbnail ? (
+                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>جاري الرفع...</>
+                  ) : '📷 رفع صورة'}
+                  <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="hidden" disabled={uploadingThumbnail}
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = ''; }} />
+                </label>
+                <p className="text-xs text-slate-400 mt-1.5">JPEG, PNG, WebP — حد أقصى 5MB</p>
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">العنوان</label>
-            <input
-              type="text"
-              value={form.title || ''}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-            />
+            <input type="text" value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">وصف مختصر</label>
-            <input
-              type="text"
-              value={form.shortDescription || ''}
-              onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-            />
+            <input type="text" value={form.shortDescription || ''} onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">الوصف الكامل</label>
-            <textarea
-              value={form.description || ''}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={5}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-            />
+            <textarea value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={5} className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" />
           </div>
 
           <div className="grid grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">السعر (ج.م)</label>
-              <input
-                type="number"
-                value={form.price || 0}
-                onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="number" value={form.price || 0} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">سعر الخصم (ج.م)</label>
-              <input
-                type="number"
-                value={form.discountPrice || 0}
-                onChange={(e) => setForm({ ...form, discountPrice: Number(e.target.value) })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="number" value={form.discountPrice || 0} onChange={(e) => setForm({ ...form, discountPrice: Number(e.target.value) })}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">السنة الدراسية المستهدفة</label>
-            <select
-              value={form.targetYear || ''}
-              onChange={(e) => setForm({ ...form, targetYear: e.target.value })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-            >
+            <select value={form.targetYear || ''} onChange={(e) => setForm({ ...form, targetYear: e.target.value })}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
               <option value="">للجميع</option>
-              {ACADEMIC_YEARS.map((y) => (
-                <option key={y.value} value={y.value}>{y.label}</option>
-              ))}
+              {ACADEMIC_YEARS.map((y) => <option key={y.value} value={y.value}>{y.label}</option>)}
             </select>
           </div>
 
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.isPublished || false}
-                onChange={(e) => setForm({ ...form, isPublished: e.target.checked })}
-                className="rounded"
-              />
-              <span className="text-sm text-slate-700">منشور</span>
-            </label>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="isPublished" checked={form.isPublished || false}
+              onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} className="rounded" />
+            <label htmlFor="isPublished" className="text-sm text-slate-700 cursor-pointer">منشور</label>
           </div>
         </div>
 
-        {/* Curriculum - File Upload */}
+        {/* ── Section 2: Curriculum Structure ── */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-6">
-          <h2 className="font-semibold text-slate-900 mb-4">محتوى الكورس - رفع الملفات</h2>
-          {uploadError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-4 text-sm flex items-center justify-between">
-              <span>{uploadError}</span>
-              <button onClick={() => setUploadError('')} className="text-red-400 hover:text-red-600 mr-2">✕</button>
-            </div>
-          )}
-          {course.modules?.map((module: any, mi: number) => (
-            <div key={mi} className="mb-6">
-              <h3 className="font-medium text-slate-800 mb-3">
-                الوحدة {mi + 1}: {module.title}
-              </h3>
-              <div className="space-y-2 mr-4">
-                {module.lessons?.map((lesson: any, li: number) => {
-                  const key = `${mi}-${li}`;
-                  const isUploading = uploadingKey === key;
-                  const isSaving = savingSettings === key;
-                  const settings = lessonSettings[key];
-                  return (
-                    <div key={li} className="bg-slate-50 rounded-xl overflow-hidden border border-slate-100">
-                      {/* Lesson row */}
-                      <div className="flex items-center justify-between p-3">
-                        <div>
-                          <div className="text-sm font-medium text-slate-700">{lesson.title}</div>
-                          <div className="text-xs text-slate-500">{lesson.type === 'video' ? 'فيديو' : lesson.type === 'pdf' ? 'PDF' : 'نص'}</div>
-                        </div>
-                        {(lesson.type === 'video' || lesson.type === 'pdf') && (
-                          <div className="flex items-center gap-3">
-                            {lesson.fileUrl ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-green-600 font-medium">✓ تم الرفع</span>
-                                <label className="text-xs text-blue-500 cursor-pointer hover:underline">
-                                  استبدال
-                                  <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
-                                    onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(mi, li, file, lesson.type); }} />
-                                </label>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-slate-900">هيكل المنهج</h2>
+            <button onClick={addModule}
+              className="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors">
+              + إضافة وحدة
+            </button>
+          </div>
+
+          {form.modules.length === 0 ? (
+            <p className="text-slate-400 text-sm text-center py-8">لا توجد وحدات. أضف وحدة للبدء.</p>
+          ) : (
+            <div className="space-y-4">
+              {form.modules.map((module: Module, mi: number) => (
+                <div key={mi} className="border border-slate-200 rounded-xl overflow-hidden">
+                  {/* Module header */}
+                  <div className="flex items-center gap-3 px-4 py-3 bg-slate-50">
+                    <button type="button" onClick={() => toggleModule(mi)} className="text-slate-400 hover:text-slate-600">
+                      <svg className={`w-4 h-4 transition-transform ${expandedModules.has(mi) ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    </button>
+                    <input type="text" value={module.title} onChange={(e) => updateModuleTitle(mi, e.target.value)}
+                      placeholder="اسم الوحدة"
+                      className="flex-1 bg-transparent text-sm font-medium text-slate-800 outline-none border-b border-transparent focus:border-blue-400 pb-0.5" />
+                    <span className="text-xs text-slate-400">{module.lessons.length} درس</span>
+                    <button type="button" onClick={() => removeModule(mi)}
+                      className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors" title="حذف الوحدة">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                  </div>
+
+                  {/* Lessons */}
+                  {expandedModules.has(mi) && (
+                    <div className="divide-y divide-slate-100">
+                      {module.lessons.map((lesson: Lesson, li: number) => {
+                        const key = `${mi}-${li}`;
+                        const isUploading = uploadingKey === key;
+                        const isSaving = savingSettings === key;
+                        const settings = lessonSettings[key];
+                        return (
+                          <div key={li} className="bg-white">
+                            <div className="flex items-start gap-3 px-4 py-3">
+                              <span className="text-slate-400 text-sm mt-2.5 w-5 text-center flex-shrink-0">{li + 1}</span>
+                              <div className="flex-1 space-y-2 min-w-0">
+                                <input type="text" value={lesson.title} onChange={(e) => updateLesson(mi, li, { title: e.target.value })}
+                                  placeholder="اسم الدرس"
+                                  className="w-full text-sm text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" />
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <select value={lesson.type} onChange={(e) => updateLesson(mi, li, { type: e.target.value as LessonType })}
+                                    className="text-xs border border-slate-200 rounded-lg px-2 py-1 outline-none focus:ring-1 focus:ring-blue-400">
+                                    <option value="text">نص</option>
+                                    <option value="video">فيديو</option>
+                                    <option value="pdf">PDF</option>
+                                  </select>
+                                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                                    <input type="checkbox" checked={lesson.isPreview} onChange={(e) => updateLesson(mi, li, { isPreview: e.target.checked })} className="rounded" />
+                                    معاينة مجانية
+                                  </label>
+                                  {(lesson.type === 'video' || lesson.type === 'pdf') && (
+                                    lesson.fileUrl ? (
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-xs text-green-600 font-medium">✓ ملف محمل</span>
+                                        <label className="text-xs text-blue-500 cursor-pointer hover:underline">
+                                          استبدال
+                                          <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
+                                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(mi, li, f, lesson.type); }} />
+                                        </label>
+                                      </div>
+                                    ) : isUploading ? (
+                                      <span className="flex items-center gap-1 text-xs text-blue-600">
+                                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>
+                                        رفع...
+                                      </span>
+                                    ) : lesson._id ? (
+                                      <label className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
+                                        رفع {lesson.type === 'video' ? 'فيديو' : 'PDF'}
+                                        <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
+                                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(mi, li, f, lesson.type); }} />
+                                      </label>
+                                    ) : (
+                                      <span className="text-xs text-slate-400">احفظ أولاً لرفع الملف</span>
+                                    )
+                                  )}
+                                </div>
+                                {lesson.type === 'text' && (
+                                  <textarea value={lesson.content || ''} onChange={(e) => updateLesson(mi, li, { content: e.target.value })}
+                                    placeholder="محتوى الدرس..." rows={3}
+                                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-blue-400 resize-none text-slate-700" />
+                                )}
                               </div>
-                            ) : isUploading ? (
-                              <div className="flex items-center gap-2 text-xs text-blue-600">
-                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                </svg>
-                                جاري الرفع...
+                              <button type="button" onClick={() => removeLesson(mi, li)}
+                                className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors mt-1.5 flex-shrink-0" title="حذف الدرس">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                              </button>
+                            </div>
+
+                            {/* Video settings */}
+                            {lesson.type === 'video' && settings && (
+                              <div className="border-t border-slate-200">
+                                <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 border-b border-slate-200">
+                                  <span className="text-xs font-semibold text-slate-700">⚙️ إعدادات مشغّل الفيديو</span>
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                  {([
+                                    { k: 'allowSpeed', label: 'سرعة التشغيل' },
+                                    { k: 'allowSkip', label: 'التخطي' },
+                                    { k: 'allowSeek', label: 'شريط التقدم' },
+                                    { k: 'allowVolume', label: 'التحكم بالصوت' },
+                                    { k: 'allowFullscreen', label: 'ملء الشاشة' },
+                                    { k: 'forceFocus', label: 'التركيز الإجباري' },
+                                  ]).map(({ k, label }) => (
+                                    <div key={k} className="flex items-center justify-between px-4 py-2 bg-white hover:bg-slate-50">
+                                      <span className="text-xs text-slate-700">{label}</span>
+                                      <button type="button" onClick={() => toggleSetting(mi, li, k, !(settings[k]))}
+                                        className={`relative w-10 h-5 rounded-full transition-all flex-shrink-0 ${settings[k] ? 'bg-blue-600' : 'bg-slate-200'}`}>
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${settings[k] ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="flex justify-end px-4 py-2 bg-slate-50 border-t border-slate-100">
+                                  <button type="button" onClick={() => saveVideoSettings(mi, li)} disabled={isSaving}
+                                    className="text-xs font-semibold bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors">
+                                    {isSaving ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+                                  </button>
+                                </div>
                               </div>
-                            ) : (
-                              <label className="flex items-center gap-1.5 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                </svg>
-                                رفع {lesson.type === 'video' ? 'فيديو' : 'PDF'}
-                                <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
-                                  onChange={(e) => { const file = e.target.files?.[0]; if (file) handleFileUpload(mi, li, file, lesson.type); }} />
-                              </label>
                             )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })}
 
-                      {/* Video controls settings panel */}
-                      {lesson.type === 'video' && settings && (
-                        <div className="border-t border-slate-200 overflow-hidden">
-                          {/* Header */}
-                          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-100 border-b border-slate-200">
-                            <div className="w-6 h-6 bg-slate-800 rounded-md flex items-center justify-center flex-shrink-0">
-                              <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.21.08-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-                              </svg>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-700">إعدادات مشغّل الفيديو</span>
-                          </div>
-                          {/* Controls list */}
-                          <div className="divide-y divide-slate-100 bg-white">
-                            {([
-                              { key: 'allowSpeed',      label: 'سرعة التشغيل',      desc: 'تحكم في سرعة عرض الفيديو',          path: 'M13 2.05v2.02c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93v2.02c5.05-.5 9-4.76 9-9.95S18.05 2.55 13 2.05zM7.1 18.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zm-1.6-3.85c-.6-1.04-.93-2.2-.93-3.47s.33-2.43.93-3.47L3.92 5.97A10.01 10.01 0 0 0 2 11h2c.12.97.37 1.84.69 2.65zM11 5.08V3.06C9.61 3.23 8.26 3.77 7.1 4.67L8.55 6.12C9.3 5.58 10.14 5.23 11 5.08z', iconCls: 'text-violet-600 bg-violet-50' },
-                              { key: 'allowSkip',       label: 'التخطي',             desc: 'تقديم ورجوع بمقدار 10 ثوانٍ',       path: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',                                                              iconCls: 'text-blue-600 bg-blue-50' },
-                              { key: 'allowSeek',       label: 'شريط التقدم',        desc: 'النقر للانتقال لأي لحظة',             path: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z',                                         iconCls: 'text-cyan-600 bg-cyan-50' },
-                              { key: 'allowVolume',     label: 'التحكم بالصوت',      desc: 'ضبط مستوى الصوت وكتمه',            path: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z',                                                                                        iconCls: 'text-green-600 bg-green-50' },
-                              { key: 'allowFullscreen', label: 'ملء الشاشة',         desc: 'مشاهدة الفيديو بالشاشة الكاملة',   path: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',                                                                                        iconCls: 'text-orange-600 bg-orange-50' },
-                              { key: 'forceFocus',      label: 'التركيز الإجباري',   desc: 'إيقاف الفيديو عند مغادرة التبويب', path: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z', iconCls: 'text-rose-600 bg-rose-50' },
-                            ] as { key: string; label: string; desc: string; path: string; iconCls: string }[]).map(({ key: sk, label, desc, path, iconCls }) => (
-                              <div key={sk} className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 transition-colors">
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconCls}`}>
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d={path} /></svg>
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-medium text-slate-800 leading-tight">{label}</div>
-                                    <div className="text-xs text-slate-400 mt-0.5">{desc}</div>
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleSetting(mi, li, sk, !settings[sk])}
-                                  className={`relative w-11 h-6 rounded-full transition-all duration-200 flex-shrink-0 ms-4 ${settings[sk] ? 'bg-blue-600' : 'bg-slate-200'}`}
-                                  title={settings[sk] ? 'تعطيل' : 'تفعيل'}
-                                >
-                                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${settings[sk] ? 'translate-x-6' : 'translate-x-1'}`} />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          {/* Save footer */}
-                          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-t border-slate-100">
-                            <span className="text-xs text-slate-400">تُطبَّق التغييرات فور الحفظ</span>
-                            <button
-                              onClick={() => saveVideoSettings(mi, li)}
-                              disabled={isSaving}
-                              className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 active:bg-slate-900 transition-colors disabled:opacity-50"
-                            >
-                              {isSaving ? (
-                                <>
-                                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                  </svg>
-                                  جاري الحفظ...
-                                </>
-                              ) : (
-                                <>
-                                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" />
-                                  </svg>
-                                  حفظ الإعدادات
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <div className="px-4 py-2.5 bg-slate-50">
+                        <button type="button" onClick={() => addLesson(mi)}
+                          className="text-sm text-blue-600 font-medium hover:underline">
+                          + إضافة درس
+                        </button>
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
+        {/* Actions */}
         <div className="flex justify-end gap-3">
-          <button
-            onClick={() => router.push('/dashboard/instructor/courses')}
-            className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
-          >
+          <button type="button" onClick={() => router.push('/dashboard/instructor/courses')}
+            className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium">
             إلغاء
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
-          >
+          <button type="button" onClick={handleSave} disabled={saving}
+            className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50">
             {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
           </button>
         </div>
