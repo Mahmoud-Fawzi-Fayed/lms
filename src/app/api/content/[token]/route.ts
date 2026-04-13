@@ -6,6 +6,7 @@ import connectDB from '@/lib/db';
 import fs from 'fs/promises';
 import path from 'path';
 import { isSameAcademicYear } from '@/lib/academic-year';
+import mongoose from 'mongoose';
 
 // GET /api/content/[token] - Serve protected content with signed token
 export async function GET(
@@ -29,19 +30,22 @@ export async function GET(
       return apiError('ليس لديك صلاحية الوصول', 403);
     }
 
-    // Get the lesson file path — select('+...') adds select:false field on top of full defaults
-    const course = await Course.findById(decoded.courseId)
-      .select('+modules.lessons.filePath');
-    if (!course) return apiError('الكورس غير موجود', 404);
+    // Use raw collection query to bypass Mongoose's select:false on nested filePath
+    // This is necessary because +modules.lessons.filePath is unreliable on nested array paths
+    const courseDoc = await Course.collection.findOne(
+      { _id: new mongoose.Types.ObjectId(decoded.courseId) },
+      { projection: { instructor: 1, targetYear: 1, 'modules.lessons': 1 } }
+    );
+    if (!courseDoc) return apiError('الكورس غير موجود', 404);
 
     const isOwnerOrAdmin =
       user.role === 'admin' ||
-      (user.role === 'instructor' && String((course as any).instructor) === user.id);
+      (user.role === 'instructor' && String(courseDoc.instructor) === user.id);
 
     let lessonFilePath: string | undefined;
     let isPreviewLesson = false;
-    for (const mod of course.modules) {
-      const lesson = mod.lessons.find(
+    for (const mod of courseDoc.modules || []) {
+      const lesson = (mod.lessons || []).find(
         (l: any) => l._id?.toString() === decoded.lessonId
       );
       if (lesson) {
@@ -51,9 +55,12 @@ export async function GET(
       }
     }
 
-    if (!lessonFilePath) return apiError('المحتوى غير موجود', 404);
+    if (!lessonFilePath) {
+      console.error('[content] lessonId not found or filePath empty. courseId:', decoded.courseId, 'lessonId:', decoded.lessonId);
+      return apiError('المحتوى غير موجود', 404);
+    }
 
-    if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
+    if (user.role === 'student' && courseDoc.targetYear && !isSameAcademicYear(user.academicYear, courseDoc.targetYear)) {
       return apiError('هذا المحتوى غير متاح لسنتك الدراسية', 403);
     }
 
