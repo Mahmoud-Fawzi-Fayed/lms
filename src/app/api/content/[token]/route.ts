@@ -29,35 +29,43 @@ export async function GET(
       return apiError('ليس لديك صلاحية الوصول', 403);
     }
 
-    // Check enrollment
-    const enrollment = await Enrollment.findOne({
-      user: user.id,
-      course: decoded.courseId,
-      status: 'active',
-    });
-
-    if (!enrollment) return apiError('أنت غير مشترك في هذا الكورس', 403);
-
     // Get the lesson file path
-    const course = await Course.findById(decoded.courseId).select('targetYear modules.lessons._id +modules.lessons.filePath');
+    const course = await Course.findById(decoded.courseId)
+      .select('targetYear instructor modules.lessons._id modules.lessons.isPreview +modules.lessons.filePath');
     if (!course) return apiError('الكورس غير موجود', 404);
 
-    if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
-      return apiError('هذا المحتوى غير متاح لسنتك الدراسية', 403);
-    }
+    const isOwnerOrAdmin =
+      user.role === 'admin' ||
+      (user.role === 'instructor' && String((course as any).instructor) === user.id);
 
     let lessonFilePath: string | undefined;
+    let isPreviewLesson = false;
     for (const mod of course.modules) {
       const lesson = mod.lessons.find(
         (l: any) => l._id?.toString() === decoded.lessonId
       );
       if (lesson) {
         lessonFilePath = lesson.filePath;
+        isPreviewLesson = Boolean(lesson.isPreview);
         break;
       }
     }
 
     if (!lessonFilePath) return apiError('المحتوى غير موجود', 404);
+
+    if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
+      return apiError('هذا المحتوى غير متاح لسنتك الدراسية', 403);
+    }
+
+    if (!isOwnerOrAdmin && !isPreviewLesson) {
+      const enrollment = await Enrollment.findOne({
+        user: user.id,
+        course: decoded.courseId,
+        status: 'active',
+      });
+
+      if (!enrollment) return apiError('أنت غير مشترك في هذا الكورس', 403);
+    }
 
     // Serve the file
     const fileBuffer = await fs.readFile(lessonFilePath);
