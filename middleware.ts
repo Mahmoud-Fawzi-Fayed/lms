@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 // Routes that require authentication
-const protectedPaths = ['/dashboard', '/courses/learn', '/exams/take', '/api/user'];
+const protectedPaths = ['/dashboard', '/courses', '/exams', '/api/user'];
 // Routes that require specific roles
 const adminPaths = ['/dashboard/admin'];
 const instructorPaths = ['/dashboard/instructor'];
