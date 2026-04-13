@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 const CONTENT_TOKEN_SECRET = process.env.CONTENT_SECRET || process.env.NEXTAUTH_SECRET || 'fallback-secret';
-const TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
+const TOKEN_EXPIRY = 2 * 60 * 1000; // 2 minutes – short-lived to limit replay
 
 export function generateContentToken(
   userId: string,

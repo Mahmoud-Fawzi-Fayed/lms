@@ -158,3 +158,59 @@
 .card-hover:hover {
   @apply -translate-y-1 shadow-xl shadow-blue-500/10;
 }
+
+/* ── Global Content Protection ──────────────────────────────────── */
+
+/* Block printing entirely */
+@media print {
+  html, body {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
+
+/* Disable text selection on protected content */
+.content-protected,
+.content-protected * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
+/* Allow selection in form inputs */
+.content-protected input,
+.content-protected textarea,
+.content-protected select,
+.content-protected [contenteditable="true"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+/* Disable image/video dragging */
+img, video {
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+}
+
+/* DevTools open deterrent – blur content */
+body.devtools-open .content-protected {
+  filter: blur(30px) !important;
+  pointer-events: none !important;
+}
+body.devtools-open::after {
+  content: '⚠️ أدوات المطور مفتوحة – أغلقها لعرض المحتوى';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.95);
+  color: white;
+  padding: 30px 50px;
+  border-radius: 12px;
+  font-size: 18px;
+  z-index: 999999;
+  font-family: var(--font-cairo), Arial, sans-serif;
+  text-align: center;
+}

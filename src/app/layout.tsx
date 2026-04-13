@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Cairo } from 'next/font/google';
 import Providers from '@/components/Providers';
+import ContentProtection from '@/components/ContentProtection';
 import './globals.css';
 
 const cairo = Cairo({ subsets: ['arabic', 'latin'], variable: '--font-cairo', weight: ['300', '400', '500', '600', '700', '800'] });
@@ -23,7 +24,9 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" className={cairo.variable}>
       <body className="min-h-screen bg-gray-50 font-arabic">
-        <Providers>{children}</Providers>
+        <Providers>
+          <ContentProtection>{children}</ContentProtection>
+        </Providers>
       </body>
     </html>
   );

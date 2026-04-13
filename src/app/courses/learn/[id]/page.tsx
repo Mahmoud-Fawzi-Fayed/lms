@@ -80,7 +80,7 @@ export default function CourseLearnPage() {
       const res = await fetch(`/api/courses/${courseId}/content-token?lessonId=${lessonId}`);
       const data = await res.json();
       if (data.success && data.data.token) {
-        setContentUrl(`/api/content/${data.data.token}`);
+        setContentUrl(`/api/content/${data.data.token}?mode=raw`);
       }
     } catch (error) {
       console.error('Failed to load content URL');
@@ -199,7 +199,7 @@ export default function CourseLearnPage() {
               {course.modules.map((mod: any, mi: number) => (
                 <div key={mi} className="border-b border-slate-100">
                   <div className="px-4 py-3 bg-slate-50 font-medium text-sm text-slate-700">
-                    الوحدة {mi + 1}: {mod.title}
+                    {mod.title}
                   </div>
                   {mod.lessons.map((lesson: any, li: number) => {
                     const isActive = mi === activeModuleIndex && li === activeLessonIndex;

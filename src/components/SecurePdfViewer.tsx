@@ -18,11 +18,19 @@ export default function SecurePdfViewer({ src, title }: SecurePdfViewerProps) {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [blobSrc, setBlobSrc] = useState<string>('');
 
   useEffect(() => {
-    // We load the PDF via iframe with maximum restrictions
-    // In production, consider server-side rendering PDF pages as images
-    setLoading(false);
+    let revoke = '';
+    setBlobSrc('');
+    setLoading(true);
+    setError(null);
+    if (!src) return;
+    fetch(src, { credentials: 'include', headers: { 'X-Content-Request': '1' } })
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(b => { revoke = URL.createObjectURL(b); setBlobSrc(revoke); setLoading(false); })
+      .catch(() => { setError('فشل تحميل الملف'); setLoading(false); });
+    return () => { if (revoke) URL.revokeObjectURL(revoke); };
   }, [src]);
 
   return (
@@ -60,7 +68,7 @@ export default function SecurePdfViewer({ src, title }: SecurePdfViewerProps) {
         ) : (
           <>
             <iframe
-              src={`${src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+              src={`${blobSrc}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
               className="w-full h-full border-0"
               style={{
                 pointerEvents: 'auto',

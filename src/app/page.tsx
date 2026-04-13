@@ -4,7 +4,7 @@ import Footer from '@/components/Footer';
 
 export default function HomePage() {
   // Background position controls - adjust these numbers directly
-  const bgPositionTop = -400;    // Top/Bottom: negative shows more face, positive shows more bottom
+  const bgPositionTop = 0;    // Top/Bottom: negative shows more face, positive shows more bottom
   const bgPositionLeft = -500;   // Left/Right in pixels: move face to left side (try: -300, -400, -500, -600)
 
 
@@ -14,7 +14,7 @@ export default function HomePage() {
       <main>
         {/* Hero Section */}
         <section className="relative text-white overflow-hidden min-h-screen flex items-center w-full" style={{
-          backgroundImage: 'url(/BG.jpeg)',
+          backgroundImage: 'url(/BG.PNG)',
           backgroundSize: '135%',
           backgroundPosition: `${bgPositionLeft}px ${bgPositionTop}px`,
           backgroundRepeat: 'no-repeat',

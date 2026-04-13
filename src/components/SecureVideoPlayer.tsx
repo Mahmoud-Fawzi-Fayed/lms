@@ -40,9 +40,11 @@ export default function SecureVideoPlayer({
   const forceFocusRef = useRef(forceFocus);
   useEffect(() => { forceFocusRef.current = forceFocus; }, [forceFocus]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const animFrameRef = useRef<number>(0);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -55,6 +57,8 @@ export default function SecureVideoPlayer({
   const [showControls, setShowControls] = useState(true);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [blobSrc, setBlobSrc] = useState<string>('');
+  const [loadError, setLoadError] = useState(false);
   const [seekTooltip, setSeekTooltip] = useState({ visible: false, x: 0, time: 0 });
   const [skipFlash, setSkipFlash] = useState<'back' | 'forward' | null>(null);
 
@@ -96,6 +100,28 @@ export default function SecureVideoPlayer({
     };
   }, [onProgress, onComplete]);
 
+  // Fetch video as blob to hide raw URL; revoke immediately after load starts
+  useEffect(() => {
+    setBlobSrc('');
+    setLoadError(false);
+    if (!src) return;
+    const video = videoRef.current;
+    fetch(src, { credentials: 'include', headers: { 'X-Content-Request': '1' } })
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(b => {
+        const url = URL.createObjectURL(b);
+        setBlobSrc(url);
+        // Revoke blob URL immediately after the video element grabs it
+        // The video keeps playing from memory but the URL becomes useless
+        if (video) {
+          const revokeOnce = () => { URL.revokeObjectURL(url); video.removeEventListener('loadeddata', revokeOnce); };
+          video.addEventListener('loadeddata', revokeOnce);
+        }
+      })
+      .catch(() => setLoadError(true));
+    // no cleanup revoke needed — we revoke above on loadeddata
+  }, [src]);
+
   // Force-focus: pause when tab is hidden or window loses focus
   // Registered once on mount using a ref so it always reads the latest value
   useEffect(() => {
@@ -112,6 +138,29 @@ export default function SecureVideoPlayer({
       window.removeEventListener('blur', handleBlur);
     };
   }, []); // intentionally empty — ref keeps value current
+
+  // Canvas rendering loop — paints video frames to <canvas> so no <video> is visible
+  useEffect(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const draw = () => {
+      if (video.readyState >= 2) {
+        // Match canvas size to video intrinsic size
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          canvas.width = video.videoWidth || 1280;
+          canvas.height = video.videoHeight || 720;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+      animFrameRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(animFrameRef.current);
+  }, [blobSrc]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -242,21 +291,38 @@ export default function SecureVideoPlayer({
       onMouseLeave={() => { if (isPlaying) setShowControls(false); }}
       onContextMenu={e => e.preventDefault()}
     >
-      {/* Video */}
+      {/* Hidden video element — never visible to user, used as source for canvas */}
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
         playsInline
-        controlsList="nodownload nofullscreen noremoteplayback"
         disablePictureInPicture
         disableRemotePlayback
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none', zIndex: -1 }}
+      >
+        {blobSrc && <source src={blobSrc} type="video/mp4" />}
+      </video>
+
+      {/* Canvas — renders video frames, right-click shows "Save Image As" not "Save Video As" */}
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full object-contain"
         onContextMenu={e => e.preventDefault()}
         onClick={togglePlay}
         onDoubleClick={toggleFullscreen}
-        crossOrigin="use-credentials"
-      >
-        <source src={src} type="video/mp4" />
-      </video>
+        style={{ display: 'block', background: '#000' }}
+      />
+
+      {/* Loading / error overlay */}
+      {!blobSrc && !loadError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black" style={{ zIndex: 5 }}>
+          <div className="w-14 h-14 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black text-white" style={{ zIndex: 5 }}>
+          فشل تحميل الفيديو
+        </div>
+      )}
 
       {/* Buffering spinner */}
       {isBuffering && (

@@ -91,8 +91,8 @@ export default function ContentProtection({
   const handleVisibilityChange = useCallback(() => {
     if (!enabled) return;
     if (document.hidden) {
-      // Page is hidden (possible screenshot/recording)
-      // We could blur the content or add an overlay
+      // Pause all videos when page hidden (screenshot/recording attempt)
+      document.querySelectorAll('video').forEach(v => v.pause());
     }
   }, [enabled]);
 
@@ -124,12 +124,43 @@ export default function ContentProtection({
     };
     devtoolsCheckInterval = setInterval(checkDevtools, 1000);
 
+    // Screen recording detection: intercept getDisplayMedia
+    const origGetDisplayMedia = navigator.mediaDevices?.getDisplayMedia;
+    if (navigator.mediaDevices && origGetDisplayMedia) {
+      navigator.mediaDevices.getDisplayMedia = function (options?: DisplayMediaStreamOptions) {
+        document.body.classList.add('screen-recording');
+        document.querySelectorAll('video').forEach(v => v.pause());
+        showWarning('⚠️ تم اكتشاف تسجيل الشاشة');
+        return origGetDisplayMedia.call(this, options);
+      };
+    }
+
+    // Detect Picture-in-Picture attempts
+    const handlePiP = (e: Event) => {
+      e.preventDefault();
+      showWarning('⚠️ صورة داخل صورة غير مسموح بها');
+    };
+    document.addEventListener('enterpictureinpicture', handlePiP, true);
+
+    // Clear clipboard on focus to remove any screenshots
+    const handleFocus = () => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText('').catch(() => {});
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('dragstart', handleDragStart);
+      document.removeEventListener('enterpictureinpicture', handlePiP, true);
+      window.removeEventListener('focus', handleFocus);
       clearInterval(devtoolsCheckInterval);
+      if (navigator.mediaDevices && origGetDisplayMedia) {
+        navigator.mediaDevices.getDisplayMedia = origGetDisplayMedia;
+      }
     };
   }, [enabled, handleKeyDown, handleContextMenu, handleVisibilityChange]);
 
@@ -169,20 +200,41 @@ export default function ContentProtection({
         }
 
         body.devtools-open::after {
-          content: 'Developer tools detected. Please close them to view content.';
+          content: 'أدوات المطور مفتوحة - أغلقها لعرض المحتوى';
           position: fixed;
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
-          background: rgba(0, 0, 0, 0.9);
+          background: rgba(0, 0, 0, 0.95);
           color: white;
           padding: 30px 50px;
           border-radius: 10px;
           font-size: 18px;
           z-index: 99999;
+          direction: rtl;
         }
 
-        /* Disable image dragging */
+        /* Screen recording detected */
+        body.screen-recording .content-protected {
+          filter: blur(30px) brightness(0.3) !important;
+          pointer-events: none !important;
+        }
+        body.screen-recording::after {
+          content: '⚠️ تم اكتشاف تسجيل الشاشة';
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(220, 38, 38, 0.95);
+          color: white;
+          padding: 30px 50px;
+          border-radius: 10px;
+          font-size: 20px;
+          z-index: 99999;
+          direction: rtl;
+        }
+
+        /* Disable image/video dragging */
         .content-protected img,
         .content-protected video {
           -webkit-user-drag: none;
@@ -192,6 +244,12 @@ export default function ContentProtection({
 
         .content-protected video {
           pointer-events: auto;
+        }
+
+        /* Prevent capture via CSS — experimental but supported in some browsers */
+        .content-protected canvas,
+        .content-protected video {
+          content-visibility: auto;
         }
       `}</style>
 
@@ -227,14 +285,14 @@ export default function ContentProtection({
   );
 }
 
-function showWarning() {
+function showWarning(message = '⚠️ هذا المحتوى محمي') {
   // Brief toast warning
   const existing = document.getElementById('protection-warning');
   if (existing) existing.remove();
 
   const warning = document.createElement('div');
   warning.id = 'protection-warning';
-  warning.textContent = '⚠️ This content is protected';
+  warning.textContent = message;
   warning.style.cssText = `
     position: fixed; top: 20px; right: 20px; z-index: 99999;
     background: #ef4444; color: white; padding: 12px 24px;

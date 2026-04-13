@@ -8,8 +8,8 @@ import path from 'path';
 import { isSameAcademicYear } from '@/lib/academic-year';
 import mongoose from 'mongoose';
 
-// GET /api/content/[token]         → HTML wrapper player page (video/pdf) or HTML text page
-// GET /api/content/[token]?mode=raw → raw binary (consumed by the HTML page only)
+// GET /api/content/[token]?mode=raw  → raw binary (only via JS fetch with custom header)
+// GET /api/content/[token]            → redirect / deny direct browser access
 export async function GET(
   req: NextRequest,
   { params }: { params: { token: string } }
@@ -22,6 +22,21 @@ export async function GET(
 
     const { token } = params;
     const mode = req.nextUrl.searchParams.get('mode');
+
+    // ── Block direct browser navigation ──────────────────────────────
+    // Only allow ?mode=raw with our custom header (set by JS fetch in the modal).
+    // If someone pastes the URL into the browser address bar, the header won't be there.
+    if (mode !== 'raw' || req.headers.get('X-Content-Request') !== '1') {
+      return new NextResponse(
+        `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>غير مسموح</title></head>` +
+        `<body style="font-family:Arial;display:flex;align-items:center;justify-content:center;min-height:80vh;text-align:center">` +
+        `<div><h2 style="color:#dc2626">⛔ الوصول المباشر غير مسموح</h2>` +
+        `<p style="color:#64748b;margin-top:1rem">الرجاء الوصول للمحتوى من صفحة الكورس</p>` +
+        `<a href="/courses" style="display:inline-block;margin-top:1.5rem;padding:10px 28px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">العودة للكورسات</a>` +
+        `</div></body></html>`,
+        { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
+    }
 
     const decoded = verifyContentToken(token);
     if (!decoded) return apiError('رابط المحتوى غير صالح أو منتهي الصلاحية', 403);
@@ -73,13 +88,10 @@ export async function GET(
     // ── TEXT LESSON ──────────────────────────────────────────────────────────
     if (lessonDoc.type === 'text') {
       const content = lessonDoc.content || '<p>لا يوجد محتوى لهذا الدرس</p>';
-      return new NextResponse(buildTextHtml(lessonDoc.title || 'الدرس', content), {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-          'X-Frame-Options': 'SAMEORIGIN',
-        },
-      });
+      return NextResponse.json(
+        { success: true, data: { type: 'text', title: lessonDoc.title || 'الدرس', content } },
+        { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, private' } }
+      );
     }
 
     // ── FILE LESSON (video / pdf) ─────────────────────────────────────────────
@@ -89,124 +101,12 @@ export async function GET(
       return apiError('ملف المحتوى غير موجود – يرجى رفع الملف أولاً', 404);
     }
 
-    // mode=raw → serve actual binary (called by the HTML wrapper page internally)
-    if (mode === 'raw') {
-      return await serveRawFile(req, lessonFilePath);
-    }
-
-    // Default → serve protected HTML wrapper with embedded player
-    const rawUrl = `/api/content/${token}?mode=raw`;
-    return new NextResponse(buildPlayerHtml(lessonDoc.type, rawUrl, lessonDoc.title || ''), {
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-        'X-Frame-Options': 'SAMEORIGIN',
-      },
-    });
+    return await serveRawFile(req, lessonFilePath);
 
   } catch (error: any) {
     console.error('Content serve error:', error);
     return apiError('فشل تحميل المحتوى', 500);
   }
-}
-
-// ── HTML Builders ─────────────────────────────────────────────────────────────
-
-function esc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function buildTextHtml(title: string, content: string) {
-  return `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title)}</title>
-  <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 2rem; max-width: 900px; margin: 0 auto; background: #f9fafb; color: #111; line-height: 1.8; }
-    h1 { font-size: 1.4rem; margin-bottom: 1.5rem; padding-bottom: .5rem; border-bottom: 2px solid #3b82f6; color: #1e40af; }
-    .content { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-  </style>
-</head>
-<body>
-  <h1>${esc(title)}</h1>
-  <div class="content">${content}</div>
-</body>
-</html>`;
-}
-
-function buildPlayerHtml(type: string, rawUrl: string, title: string) {
-  if (type === 'video') {
-    return `<!DOCTYPE html>
-<html lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title)}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
-    video { width: 100%; max-height: 100vh; outline: none; }
-    #msg { color: #fff; font-family: Arial; padding: 2rem; }
-  </style>
-</head>
-<body>
-  <video id="v"
-    controls
-    autoplay
-    controlsList="nodownload noremoteplayback"
-    disablePictureInPicture
-    oncontextmenu="return false"
-  ></video>
-  <div id="msg" style="display:none">جاري التحميل...</div>
-  <script>
-    /* Fetch as blob so the raw URL never appears as a playable link in DevTools Elements */
-    const v = document.getElementById('v');
-    const msg = document.getElementById('msg');
-    msg.style.display = 'block';
-    fetch('${rawUrl}', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-      .then(b => { v.src = URL.createObjectURL(b); msg.style.display = 'none'; })
-      .catch(() => { msg.textContent = 'فشل تحميل الفيديو – حاول مجدداً'; });
-  </script>
-</body>
-</html>`;
-  }
-
-  if (type === 'pdf') {
-    return `<!DOCTYPE html>
-<html lang="ar">
-<head>
-  <meta charset="UTF-8">
-  <title>${esc(title)}</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    body { background: #525659; display: flex; align-items: center; justify-content: center; height: 100vh; }
-    #wrap { width: 100vw; height: 100vh; }
-    iframe { width: 100%; height: 100%; border: none; }
-    #msg { color: #fff; font-family: Arial; padding: 2rem; }
-  </style>
-</head>
-<body>
-  <div id="wrap"><div id="msg">جاري التحميل...</div></div>
-  <script>
-    fetch('${rawUrl}', { credentials: 'include' })
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-      .then(b => {
-        const blobUrl = URL.createObjectURL(b);
-        const iframe = document.createElement('iframe');
-        /* #toolbar=0 hides Chrome/Edge PDF toolbar (download button) */
-        iframe.src = blobUrl + '#toolbar=0&navpanes=0&scrollbar=1';
-        document.getElementById('wrap').replaceWith(iframe);
-      })
-      .catch(() => { document.getElementById('msg').textContent = 'فشل تحميل الملف – حاول مجدداً'; });
-  </script>
-</body>
-</html>`;
-  }
-
-  return `<!DOCTYPE html><html><body style="font-family:Arial;padding:2rem"><p>نوع المحتوى غير مدعوم</p></body></html>`;
 }
 
 // ── Raw file server (range-request aware) ────────────────────────────────────
