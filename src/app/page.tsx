@@ -14,7 +14,7 @@ export default function HomePage() {
       <main>
         {/* Hero Section */}
         <section className="relative text-white overflow-hidden min-h-screen flex items-center w-full" style={{
-          backgroundImage: 'url(/BG.PNG)',
+          backgroundImage: 'url(/BG.png)',
           backgroundSize: '135%',
           backgroundPosition: `${bgPositionLeft}px ${bgPositionTop}px`,
           backgroundRepeat: 'no-repeat',
