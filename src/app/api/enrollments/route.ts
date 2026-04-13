@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Enrollment, Course, ExamAttempt } from '@/models';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 // GET /api/enrollments - Get user's enrollments
 export const GET = withAuth(async (req, user) => {
@@ -32,7 +33,7 @@ export const POST = withAuth(async (req, user) => {
     return apiError('الكورس غير موجود', 404);
   }
 
-  if (user.role === 'student' && course.targetYear && user.academicYear !== course.targetYear) {
+  if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
     return apiError('هذا الكورس غير متاح لسنتك الدراسية', 403);
   }
 

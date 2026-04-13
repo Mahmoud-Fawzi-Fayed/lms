@@ -3,6 +3,7 @@ import { getAuthUser, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Enrollment, Course } from '@/models';
 import { generateContentToken } from '@/lib/content-token';
 import connectDB from '@/lib/db';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 // GET /api/courses/[id]/content-token?lessonId=xxx
 export async function GET(
@@ -18,11 +19,17 @@ export async function GET(
     const lessonId = req.nextUrl.searchParams.get('lessonId');
     if (!lessonId) return apiError('معرف الدرس مطلوب', 400);
 
-    const course = await Course.findById(params.id).select('targetYear').lean();
+    const course = await Course.findById(params.id).select('targetYear instructor').lean();
     if (!course) return apiError('الكورس غير موجود', 404);
 
-    if (user.role === 'student' && course.targetYear && user.academicYear !== course.targetYear) {
+    if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear as any)) {
       return apiError('هذا المحتوى غير متاح لسنتك الدراسية', 403);
+    }
+
+    const isOwnerOrAdmin = user.role === 'admin' || (user.role === 'instructor' && String((course as any).instructor) === user.id);
+    if (isOwnerOrAdmin) {
+      const token = generateContentToken(user.id, params.id, lessonId);
+      return apiSuccess({ token });
     }
 
     // Verify enrollment

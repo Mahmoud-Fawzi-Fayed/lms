@@ -3,6 +3,7 @@ import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Course, Payment, Enrollment } from '@/models';
 import { initiatePaymentSchema } from '@/lib/validations';
 import { initiatePayment } from '@/lib/paymob';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 function buildPendingPaymentResponse(method: string, paymentToken: string, iframeId: string) {
   if (iframeId) {
@@ -31,7 +32,7 @@ export const POST = withAuth(async (req, user) => {
     return apiError('الكورس غير موجود', 404);
   }
 
-  if (user.role === 'student' && course.targetYear && user.academicYear !== course.targetYear) {
+  if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
     return apiError('هذا الكورس غير متاح لسنتك الدراسية', 403);
   }
 

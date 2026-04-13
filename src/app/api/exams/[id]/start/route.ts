@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Exam, ExamAttempt, Enrollment, ExamEnrollment } from '@/models';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 // POST /api/exams/[id]/start - Start an exam attempt
 export const POST = withAuth(async (req, user) => {
@@ -11,7 +12,7 @@ export const POST = withAuth(async (req, user) => {
     return apiError('الاختبار غير موجود', 404);
   }
 
-  if (user.role === 'student' && exam.targetYear && user.academicYear !== exam.targetYear) {
+  if (user.role === 'student' && exam.targetYear && !isSameAcademicYear(user.academicYear, exam.targetYear)) {
     return apiError('هذا الاختبار غير متاح لسنتك الدراسية', 403);
   }
 

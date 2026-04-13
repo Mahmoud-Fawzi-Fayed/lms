@@ -5,6 +5,7 @@ import { verifyContentToken } from '@/lib/content-token';
 import connectDB from '@/lib/db';
 import fs from 'fs/promises';
 import path from 'path';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 // GET /api/content/[token] - Serve protected content with signed token
 export async function GET(
@@ -38,17 +39,17 @@ export async function GET(
     if (!enrollment) return apiError('أنت غير مشترك في هذا الكورس', 403);
 
     // Get the lesson file path
-    const course = await Course.findById(decoded.courseId).select('+modules.lessons.filePath targetYear');
+    const course = await Course.findById(decoded.courseId).select('targetYear modules.lessons._id +modules.lessons.filePath');
     if (!course) return apiError('الكورس غير موجود', 404);
 
-    if (user.role === 'student' && course.targetYear && user.academicYear !== course.targetYear) {
+    if (user.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear)) {
       return apiError('هذا المحتوى غير متاح لسنتك الدراسية', 403);
     }
 
     let lessonFilePath: string | undefined;
     for (const mod of course.modules) {
       const lesson = mod.lessons.find(
-        (l: any) => l._id.toString() === decoded.lessonId
+        (l: any) => l._id?.toString() === decoded.lessonId
       );
       if (lesson) {
         lessonFilePath = lesson.filePath;

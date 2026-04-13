@@ -38,6 +38,21 @@ export default function InstructorCoursesPage() {
     }
   };
 
+  const deleteCourse = async (courseId: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا الكورس؟')) return;
+    try {
+      const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.error || 'فشل حذف الكورس');
+        return;
+      }
+      setCourses((prev) => prev.filter((c) => c._id !== courseId));
+    } catch {
+      alert('حدث خطأ أثناء حذف الكورس');
+    }
+  };
+
   return (
     <DashboardSidebar links={instructorLinks}>
       <div className="p-8">
@@ -82,6 +97,13 @@ export default function InstructorCoursesPage() {
                       {course.isPublished ? 'منشور' : 'مسودة'}
                     </span>
                     <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => deleteCourse(course._id)}
+                        className="text-sm text-red-600 font-medium hover:underline"
+                      >
+                        حذف
+                      </button>
                       <Link
                         href={`/dashboard/instructor/courses/${course._id}/stats`}
                         className="text-sm text-purple-600 font-medium hover:underline"

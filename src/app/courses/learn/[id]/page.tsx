@@ -112,6 +112,16 @@ export default function CourseLearnPage() {
         setCompletedLessons(prev => [...prev, activeLesson._id]);
         setProgress(data.data.progress.percentage);
         toast.success('تم إكمال الدرس!');
+
+        if (isLastLesson) {
+          if (courseExam) {
+            toast.success('اكتمل الكورس! جاري تحويلك للاختبار...');
+            setTimeout(() => router.push(`/exams/take/${courseExam._id}`), 700);
+          } else {
+            toast.success('مبروك! اكتملت كل دروس الكورس');
+            setTimeout(() => router.push('/dashboard/student/courses'), 700);
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to mark complete');
@@ -133,6 +143,8 @@ export default function CourseLearnPage() {
       selectLesson(activeModuleIndex + 1, 0);
     } else if (courseExam) {
       router.push(`/exams/take/${courseExam._id}`);
+    } else {
+      router.push('/dashboard/student/courses');
     }
   };
 
@@ -275,10 +287,9 @@ export default function CourseLearnPage() {
               </button>
               <button
                 onClick={goToNextLesson}
-                disabled={isLastLesson && !courseExam}
                 className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-default"
               >
-                {isLastLesson && courseExam ? '← ابدأ الاختبار' : '→ التالي'}
+                {isLastLesson && courseExam ? '← ابدأ الاختبار' : isLastLesson ? 'إنهاء الكورس' : '→ التالي'}
               </button>
             </div>
           </div>

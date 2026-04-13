@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
@@ -29,6 +29,7 @@ interface Lesson {
   duration: number;
   isPreview: boolean;
   file?: File;
+  previewUrl?: string;
   videoControls: VideoControls;
 }
 
@@ -43,6 +44,8 @@ export default function CreateCoursePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(1);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+  const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set([0]));
 
   useEffect(() => { if (status === 'unauthenticated') router.push('/login'); }, [status]);
   useEffect(() => { if (status === 'authenticated' && (session?.user as any)?.role !== 'instructor' && (session?.user as any)?.role !== 'admin') router.push('/dashboard'); }, [status, session]);
@@ -51,7 +54,7 @@ export default function CreateCoursePage() {
     title: '',
     description: '',
     shortDescription: '',
-    category: 'programming',
+    category: '',
     level: 'beginner' as 'beginner' | 'intermediate' | 'advanced',
     price: 0,
     discountPrice: 0,
@@ -61,15 +64,26 @@ export default function CreateCoursePage() {
     targetYear: '',
   });
 
+  const createLesson = (type: Lesson['type'], index: number): Lesson => ({
+    title: `الدرس ${index}`,
+    type,
+    content: '',
+    duration: type === 'video' ? 10 : 0,
+    isPreview: false,
+    videoControls: { allowSpeed: true, allowSkip: true, allowFullscreen: true, allowSeek: true, allowVolume: true, forceFocus: false },
+  });
+
   const [modules, setModules] = useState<Module[]>([
-    { title: 'Introduction', lessons: [{ title: '', type: 'video', content: '', duration: 0, isPreview: false, videoControls: { allowSpeed: true, allowSkip: true, allowFullscreen: true, allowSeek: true, allowVolume: true, forceFocus: false } }] },
+    { title: 'الوحدة 1', lessons: [createLesson('video', 1)] },
   ]);
 
   const addModule = () => {
+    const newIndex = modules.length;
     setModules([...modules, {
-      title: '',
-      lessons: [{ title: '', type: 'video', content: '', duration: 0, isPreview: false, videoControls: { allowSpeed: true, allowSkip: true, allowFullscreen: true, allowSeek: true, allowVolume: true, forceFocus: false } }],
+      title: `الوحدة ${newIndex + 1}`,
+      lessons: [createLesson('video', 1)],
     }]);
+    setExpandedModules((prev) => new Set([...prev, newIndex]));
   };
 
   const removeModule = (index: number) => {
@@ -79,11 +93,50 @@ export default function CreateCoursePage() {
 
   const addLesson = (moduleIndex: number) => {
     const updated = [...modules];
-    updated[moduleIndex].lessons.push({
-      title: '', type: 'video', content: '', duration: 0, isPreview: false,
-      videoControls: { allowSpeed: true, allowSkip: true, allowFullscreen: true, allowSeek: true, allowVolume: true, forceFocus: false },
-    });
+    updated[moduleIndex].lessons.push(createLesson('video', updated[moduleIndex].lessons.length + 1));
     setModules(updated);
+  };
+
+  const addLessonWithType = (moduleIndex: number, type: Lesson['type']) => {
+    const updated = [...modules];
+    updated[moduleIndex].lessons.push(createLesson(type, updated[moduleIndex].lessons.length + 1));
+    setModules(updated);
+  };
+
+  const duplicateLesson = (moduleIndex: number, lessonIndex: number) => {
+    const updated = [...modules];
+    const source = updated[moduleIndex].lessons[lessonIndex];
+    const clone: Lesson = {
+      ...source,
+      title: source.title ? `${source.title} (نسخة)` : `الدرس ${updated[moduleIndex].lessons.length + 1}`,
+      file: undefined,
+      previewUrl: undefined,
+    };
+    updated[moduleIndex].lessons.splice(lessonIndex + 1, 0, clone);
+    setModules(updated);
+  };
+
+  const toggleModule = (index: number) => {
+    setExpandedModules((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const applyQuickTemplate = () => {
+    setModules([
+      {
+        title: 'الوحدة 1',
+        lessons: [
+          createLesson('video', 1),
+          createLesson('text', 2),
+          createLesson('pdf', 3),
+        ],
+      },
+    ]);
+    setExpandedModules(new Set([0]));
   };
 
   const removeLesson = (moduleIndex: number, lessonIndex: number) => {
@@ -95,9 +148,29 @@ export default function CreateCoursePage() {
 
   const handleLessonFile = (moduleIndex: number, lessonIndex: number, file: File | null) => {
     const updated = [...modules];
+    const oldPreview = updated[moduleIndex].lessons[lessonIndex].previewUrl;
+    if (oldPreview) {
+      URL.revokeObjectURL(oldPreview);
+      previewUrlsRef.current.delete(oldPreview);
+    }
+
     updated[moduleIndex].lessons[lessonIndex].file = file || undefined;
+    if (file && updated[moduleIndex].lessons[lessonIndex].type === 'video') {
+      const previewUrl = URL.createObjectURL(file);
+      updated[moduleIndex].lessons[lessonIndex].previewUrl = previewUrl;
+      previewUrlsRef.current.add(previewUrl);
+    } else {
+      updated[moduleIndex].lessons[lessonIndex].previewUrl = undefined;
+    }
     setModules(updated);
   };
+
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      previewUrlsRef.current.clear();
+    };
+  }, []);
 
   const updateModule = (index: number, field: string, value: string) => {
     const updated = [...modules];
@@ -182,6 +255,12 @@ export default function CreateCoursePage() {
       setSaving(false);
     }
   };
+
+  const canProceedToCurriculum =
+    form.title.trim().length > 0 &&
+    form.shortDescription.trim().length > 0 &&
+    form.description.trim().length > 0 &&
+    form.category.trim().length > 0;
 
   return (
     <DashboardSidebar links={instructorLinks}>
@@ -268,19 +347,13 @@ export default function CreateCoursePage() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">التصنيف</label>
-                <select
+                <input
+                  type="text"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
+                  placeholder="مثال: البرمجة"
                   className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value="programming">Programming</option>
-                  <option value="design">Design</option>
-                  <option value="business">Business</option>
-                  <option value="marketing">Marketing</option>
-                  <option value="science">Science</option>
-                  <option value="language">Languages</option>
-                  <option value="other">Other</option>
-                </select>
+                />
               </div>
 
               <div>
@@ -355,8 +428,9 @@ export default function CreateCoursePage() {
 
             <div className="flex justify-end">
               <button
+                disabled={!canProceedToCurriculum}
                 onClick={() => setStep(2)}
-                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+                className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 التالي: المنهج →
               </button>
@@ -367,10 +441,27 @@ export default function CreateCoursePage() {
         {/* Step 2: Curriculum */}
         {step === 2 && (
           <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-blue-800">تجهيز سريع للمنهج</div>
+                <div className="text-xs text-blue-700">ابدأ بوحدة جاهزة (فيديو + نص + PDF) ثم عدّل بسهولة.</div>
+              </div>
+              <button
+                type="button"
+                onClick={applyQuickTemplate}
+                className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                تطبيق قالب سريع
+              </button>
+            </div>
+
             {modules.map((module, mi) => (
               <div key={mi} className="bg-white rounded-2xl shadow-sm border p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
+                    <button type="button" onClick={() => toggleModule(mi)} className="text-slate-400 hover:text-slate-600">
+                      <svg className={`w-4 h-4 transition-transform ${expandedModules.has(mi) ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                    </button>
                     <span className="w-8 h-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center text-sm font-bold">
                       {mi + 1}
                     </span>
@@ -391,18 +482,28 @@ export default function CreateCoursePage() {
                   </button>
                 </div>
 
+                {expandedModules.has(mi) && (
                 <div className="space-y-3 ml-11">
                   {module.lessons.map((lesson, li) => (
                     <div key={li} className="bg-gray-50 rounded-xl p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-medium text-slate-500">الدرس {li + 1}</span>
-                        <button
-                          onClick={() => removeLesson(mi, li)}
-                          className="text-red-400 hover:text-red-600 text-xs"
-                          disabled={module.lessons.length <= 1}
-                        >
-                          حذف
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => duplicateLesson(mi, li)}
+                            className="text-indigo-500 hover:text-indigo-700 text-xs"
+                          >
+                            نسخ
+                          </button>
+                          <button
+                            onClick={() => removeLesson(mi, li)}
+                            className="text-red-400 hover:text-red-600 text-xs"
+                            disabled={module.lessons.length <= 1}
+                          >
+                            حذف
+                          </button>
+                        </div>
                       </div>
 
                       <input
@@ -416,7 +517,23 @@ export default function CreateCoursePage() {
                       <div className="grid grid-cols-3 gap-3">
                         <select
                           value={lesson.type}
-                          onChange={(e) => updateLesson(mi, li, 'type', e.target.value)}
+                          onChange={(e) => {
+                            const selectedType = e.target.value as Lesson['type'];
+                            const updated = [...modules];
+                            const current = updated[mi].lessons[li];
+                            if (current.previewUrl) {
+                              URL.revokeObjectURL(current.previewUrl);
+                              previewUrlsRef.current.delete(current.previewUrl);
+                            }
+                            updated[mi].lessons[li] = {
+                              ...current,
+                              type: selectedType,
+                              file: undefined,
+                              previewUrl: undefined,
+                              duration: selectedType === 'video' ? (current.duration || 10) : 0,
+                            };
+                            setModules(updated);
+                          }}
                           className="px-3 py-2 border rounded-lg text-sm"
                         >
                           <option value="video">فيديو</option>
@@ -472,6 +589,15 @@ export default function CreateCoursePage() {
                             className="hidden"
                             onChange={(e) => handleLessonFile(mi, li, e.target.files?.[0] || null)}
                           />
+                          {lesson.type === 'video' && lesson.previewUrl && (
+                            <div className="mt-3">
+                              <video
+                                src={lesson.previewUrl}
+                                controls
+                                className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                       {lesson.type === 'video' && (
@@ -519,13 +645,31 @@ export default function CreateCoursePage() {
                     </div>
                   ))}
 
-                  <button
-                    onClick={() => addLesson(mi)}
-                    className="w-full py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
-                  >
-                    + إضافة درس
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => addLessonWithType(mi, 'video')}
+                      className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+                    >
+                      + درس فيديو
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addLessonWithType(mi, 'text')}
+                      className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+                    >
+                      + درس نصي
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addLessonWithType(mi, 'pdf')}
+                      className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+                    >
+                      + درس PDF
+                    </button>
+                  </div>
                 </div>
+                )}
               </div>
             ))}
 
@@ -566,7 +710,7 @@ export default function CreateCoursePage() {
                 </div>
                 <div>
                   <span className="text-slate-500">التصنيف:</span>
-                  <p className="font-medium text-slate-900 capitalize">{form.category}</p>
+                  <p className="font-medium text-slate-900">{form.category || 'غير محدد'}</p>
                 </div>
                 <div>
                   <span className="text-slate-500">المستوى:</span>

@@ -3,6 +3,7 @@ import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
 import { Exam, ExamAttempt, Course, ExamEnrollment } from '@/models';
 import { examSchema } from '@/lib/validations';
 import connectDB from '@/lib/db';
+import { getAcademicYearVariants, normalizeAcademicYear } from '@/lib/academic-year';
 
 // GET /api/exams - List exams (or user's attempts if myAttempts=true)
 export async function GET(req: NextRequest) {
@@ -35,10 +36,11 @@ export async function GET(req: NextRequest) {
 
     // Students see only exams assigned to their academic year
     if (user?.role === 'student') {
-      if (!user.academicYear) {
+      const normalizedYear = normalizeAcademicYear(user.academicYear);
+      if (!normalizedYear) {
         filter._id = null;
       } else {
-        filter.targetYear = user.academicYear;
+        filter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
       }
     }
 
@@ -158,6 +160,7 @@ export const POST = withAuth(async (req, user) => {
 
   const exam = await Exam.create({
     ...parsed.data,
+    targetYear: parsed.data.targetYear ? normalizeAcademicYear(parsed.data.targetYear) : undefined,
     accessType: isFreeExam ? 'free' : 'paid',
     price: normalizedPrice,
     discountPrice: normalizedDiscount,

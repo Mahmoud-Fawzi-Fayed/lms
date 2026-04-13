@@ -52,6 +52,8 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
+  const [videoPreviewUrls, setVideoPreviewUrls] = useState<Record<string, string>>({});
   const [lessonSettings, setLessonSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState<string | null>(null);
   const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set([0]));
@@ -263,6 +265,42 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
     }
   };
 
+  const loadVideoPreview = async (mi: number, li: number, lessonId?: string) => {
+    if (!lessonId) return;
+    const key = `${mi}-${li}`;
+    if (videoPreviewUrls[key]) return;
+    setPreviewingKey(key);
+    try {
+      const tokenRes = await fetch(`/api/courses/${id}/content-token?lessonId=${lessonId}`);
+      const tokenData = await tokenRes.json();
+      if (!tokenData.success) {
+        setUploadError(tokenData.error || 'فشل تحميل المعاينة');
+        return;
+      }
+      const token = tokenData.data.token;
+      setVideoPreviewUrls((prev) => ({ ...prev, [key]: `/api/content/${token}` }));
+    } catch {
+      setUploadError('فشل تحميل معاينة الفيديو');
+    } finally {
+      setPreviewingKey(null);
+    }
+  };
+
+  const deleteCourse = async () => {
+    if (!confirm('هل أنت متأكد من حذف هذا الكورس؟')) return;
+    try {
+      const res = await fetch(`/api/courses/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || 'فشل حذف الكورس');
+        return;
+      }
+      router.push('/dashboard/instructor/courses');
+    } catch {
+      setError('حدث خطأ أثناء حذف الكورس');
+    }
+  };
+
   const toggleSetting = (mi: number, li: number, k: string, value: boolean) => {
     const key = `${mi}-${li}`;
     setLessonSettings(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [k]: value } }));
@@ -375,6 +413,17 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">التصنيف</label>
+            <input
+              type="text"
+              value={form.category || ''}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder="مثال: البرمجة"
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
           <div className="flex items-center gap-2">
             <input type="checkbox" id="isPublished" checked={form.isPublished || false}
               onChange={(e) => setForm({ ...form, isPublished: e.target.checked })} className="rounded" />
@@ -444,6 +493,15 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     lesson.fileUrl ? (
                                       <div className="flex items-center gap-1.5">
                                         <span className="text-xs text-green-600 font-medium">✓ ملف محمل</span>
+                                        {lesson.type === 'video' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => loadVideoPreview(mi, li, lesson._id)}
+                                            className="text-xs text-indigo-600 hover:underline"
+                                          >
+                                            {previewingKey === key ? 'تحميل...' : 'معاينة'}
+                                          </button>
+                                        )}
                                         <label className="text-xs text-blue-500 cursor-pointer hover:underline">
                                           استبدال
                                           <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
@@ -470,6 +528,13 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                   <textarea value={lesson.content || ''} onChange={(e) => updateLesson(mi, li, { content: e.target.value })}
                                     placeholder="محتوى الدرس..." rows={3}
                                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-blue-400 resize-none text-slate-700" />
+                                )}
+                                {lesson.type === 'video' && videoPreviewUrls[key] && (
+                                  <video
+                                    src={videoPreviewUrls[key]}
+                                    controls
+                                    className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
+                                  />
                                 )}
                               </div>
                               <button type="button" onClick={() => removeLesson(mi, li)}
@@ -530,6 +595,10 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
 
         {/* Actions */}
         <div className="flex justify-end gap-3">
+          <button type="button" onClick={deleteCourse}
+            className="px-6 py-3 bg-red-50 text-red-700 rounded-xl hover:bg-red-100 transition-colors font-medium">
+            حذف الكورس
+          </button>
           <button type="button" onClick={() => router.push('/dashboard/instructor/courses')}
             className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium">
             إلغاء

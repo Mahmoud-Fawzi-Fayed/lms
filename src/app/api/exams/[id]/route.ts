@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
 import { Exam, ExamAttempt, Enrollment } from '@/models';
 import connectDB from '@/lib/db';
+import { isSameAcademicYear, normalizeAcademicYear } from '@/lib/academic-year';
 
 // GET /api/exams/[id] - Get exam details
 export async function GET(
@@ -32,7 +33,7 @@ export async function GET(
     }
 
     // Students can only access exams assigned to their academic year
-    if (user?.role === 'student' && exam.targetYear && user.academicYear !== exam.targetYear) {
+    if (user?.role === 'student' && exam.targetYear && !isSameAcademicYear(user.academicYear, exam.targetYear)) {
       return apiError('هذا الاختبار غير متاح لسنتك الدراسية', 403);
     }
 
@@ -104,6 +105,10 @@ export const PUT = withAuth(async (req, user) => {
   const update: any = {};
   for (const field of allowedFields) {
     if (body[field] !== undefined) update[field] = body[field];
+  }
+
+  if (update.targetYear !== undefined) {
+    update.targetYear = update.targetYear ? normalizeAcademicYear(update.targetYear) : undefined;
   }
 
   const hasLinkedCourse = update.course !== undefined ? !!update.course : !!exam.course;

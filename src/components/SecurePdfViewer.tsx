@@ -65,7 +65,6 @@ export default function SecurePdfViewer({ src, title }: SecurePdfViewerProps) {
               style={{
                 pointerEvents: 'auto',
               }}
-              sandbox="allow-same-origin"
               title={title || 'PDF Document'}
             />
             {/* Overlay to prevent right-click on the iframe content */}

@@ -13,7 +13,7 @@ const nextConfig = {
   },
   headers: async () => [
     {
-      source: '/(.*)',
+      source: '/((?!api/content).*)',
       headers: [
         { key: 'X-Frame-Options', value: 'DENY' },
         { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -44,6 +44,16 @@ const nextConfig = {
     {
       source: '/api/content/:path*',
       headers: [
+        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+        {
+          key: 'Content-Security-Policy',
+          value: [
+            "default-src 'self'",
+            "frame-ancestors 'self'",
+            "object-src 'none'",
+            "base-uri 'self'",
+          ].join('; '),
+        },
         { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
         { key: 'Pragma', value: 'no-cache' },
         { key: 'Content-Disposition', value: 'inline' },

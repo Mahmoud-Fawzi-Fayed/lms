@@ -66,7 +66,7 @@ export const courseSchema = z.object({
   shortDescription: z.string().max(300).optional(),
   price: z.number().min(0, 'السعر يجب أن يكون رقمًا موجبًا أو صفرًا'),
   discountPrice: z.number().min(0).optional(),
-  category: z.string().min(1, 'التصنيف مطلوب'),
+  category: z.string().trim().min(1, 'التصنيف مطلوب'),
   level: z.enum(['beginner', 'intermediate', 'advanced']),
   language: z.string().default('ar'),
   targetYear: z.enum(academicYearValues as [AcademicYear, ...AcademicYear[]]).optional(),

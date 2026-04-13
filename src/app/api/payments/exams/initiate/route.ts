@@ -2,6 +2,7 @@ import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Exam, Payment, ExamEnrollment } from '@/models';
 import { initiateExamPaymentSchema } from '@/lib/validations';
 import { initiatePayment } from '@/lib/paymob';
+import { isSameAcademicYear } from '@/lib/academic-year';
 
 function buildPendingPaymentResponse(paymentToken: string, iframeId: string) {
   if (!iframeId) return {};
@@ -30,7 +31,7 @@ export const POST = withAuth(async (req, user) => {
     return apiError('الدفع المستقل متاح فقط للاختبارات غير المرتبطة بكورس', 400);
   }
 
-  if (user.role === 'student' && exam.targetYear && user.academicYear !== exam.targetYear) {
+  if (user.role === 'student' && exam.targetYear && !isSameAcademicYear(user.academicYear, exam.targetYear)) {
     return apiError('هذا الاختبار غير متاح لسنتك الدراسية', 403);
   }
 

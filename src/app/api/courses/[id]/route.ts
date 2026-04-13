@@ -3,6 +3,7 @@ import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
 import { Course, Enrollment } from '@/models';
 import connectDB from '@/lib/db';
 import mongoose from 'mongoose';
+import { isSameAcademicYear, normalizeAcademicYear } from '@/lib/academic-year';
 
 // GET /api/courses/[id] - Get course details
 export async function GET(
@@ -34,7 +35,7 @@ export async function GET(
     }
 
     // Students can only access courses assigned to their academic year
-    if (user?.role === 'student' && course.targetYear && user.academicYear !== course.targetYear) {
+    if (user?.role === 'student' && course.targetYear && !isSameAcademicYear(user.academicYear, course.targetYear as any)) {
       return apiError('هذا الكورس غير متاح لسنتك الدراسية', 403);
     }
 
@@ -116,6 +117,17 @@ export const PUT = withAuth(async (req, user) => {
   for (const field of allowedFields) {
     if (body[field] !== undefined) {
       update[field] = body[field];
+    }
+  }
+
+  if (update.targetYear !== undefined) {
+    update.targetYear = update.targetYear ? normalizeAcademicYear(update.targetYear) : undefined;
+  }
+
+  if (update.category !== undefined) {
+    update.category = String(update.category).trim();
+    if (!update.category) {
+      return apiError('التصنيف مطلوب');
     }
   }
 

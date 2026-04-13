@@ -3,6 +3,7 @@ import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
 import { Course } from '@/models';
 import { courseSchema } from '@/lib/validations';
 import connectDB from '@/lib/db';
+import { getAcademicYearVariants, normalizeAcademicYear } from '@/lib/academic-year';
 
 // GET /api/courses - List courses (public)
 export async function GET(req: NextRequest) {
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1');
     const limit = Math.min(parseInt(searchParams.get('limit') || '12'), 50);
-    const category = searchParams.get('category');
+    const category = searchParams.get('category')?.trim();
     const level = searchParams.get('level');
     const search = searchParams.get('search');
     const sort = searchParams.get('sort') || 'newest';
@@ -22,12 +23,13 @@ export async function GET(req: NextRequest) {
 
     const baseFilter: any = { isPublished: true };
 
-    // Students only see courses assigned to their exact academic year
+    // Students only see courses assigned to their academic year (with legacy aliases support)
     if (user?.role === 'student') {
-      if (!user.academicYear) {
+      const normalizedYear = normalizeAcademicYear(user.academicYear);
+      if (!normalizedYear) {
         baseFilter._id = null;
       } else {
-        baseFilter.targetYear = user.academicYear;
+        baseFilter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
       }
     }
 
@@ -108,6 +110,8 @@ export const POST = withAuth(async (req, user) => {
 
   const course = await Course.create({
     ...parsed.data,
+    category: parsed.data.category.trim(),
+    targetYear: parsed.data.targetYear ? normalizeAcademicYear(parsed.data.targetYear) : undefined,
     price: normalizedPrice,
     discountPrice: normalizedDiscount,
     instructor: user.id,
