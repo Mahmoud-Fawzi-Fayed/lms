@@ -87,6 +87,27 @@ export default function CourseDetailPage() {
     }
   };
 
+  const handlePreviewLesson = async (lessonId: string) => {
+    if (!session) {
+      router.push(`/login?callbackUrl=/courses/${slug}`);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/courses/${course._id}/content-token?lessonId=${lessonId}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success || !data.data?.token) {
+        toast.error(data.error || 'تعذر فتح المعاينة');
+        return;
+      }
+
+      window.open(`/api/content/${data.data.token}`, '_blank', 'noopener,noreferrer');
+    } catch {
+      toast.error('فشل فتح المعاينة');
+    }
+  };
+
   if (loading) {
     return (
       <>
@@ -322,7 +343,10 @@ export default function CourseDetailPage() {
                       {mod.lessons?.map((lesson: any, li: number) => (
                         <div
                           key={li}
-                          className="px-5 py-3 flex items-center justify-between hover:bg-slate-50"
+                          className={`px-5 py-3 flex items-center justify-between hover:bg-slate-50 ${lesson.isPreview ? 'cursor-pointer' : ''}`}
+                          onClick={() => {
+                            if (lesson.isPreview) handlePreviewLesson(lesson._id);
+                          }}
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-slate-400">
@@ -332,9 +356,17 @@ export default function CourseDetailPage() {
                               {lesson.title}
                             </span>
                             {lesson.isPreview && (
-                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePreviewLesson(lesson._id);
+                                }}
+                                className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-0.5 rounded-full transition-colors"
+                                title="فتح المعاينة"
+                              >
                                 معاينة
-                              </span>
+                              </button>
                             )}
                           </div>
                           {lesson.duration > 0 && (
