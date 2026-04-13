@@ -29,9 +29,9 @@ export async function GET(
       return apiError('ليس لديك صلاحية الوصول', 403);
     }
 
-    // Get the lesson file path
+    // Get the lesson file path — select('+...') adds select:false field on top of full defaults
     const course = await Course.findById(decoded.courseId)
-      .select('targetYear instructor modules.lessons._id modules.lessons.isPreview +modules.lessons.filePath');
+      .select('+modules.lessons.filePath');
     if (!course) return apiError('الكورس غير موجود', 404);
 
     const isOwnerOrAdmin =
