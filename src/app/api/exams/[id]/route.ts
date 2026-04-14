@@ -98,7 +98,7 @@ export const PUT = withAuth(async (req, user) => {
 
   const allowedFields = [
     'title', 'description', 'duration', 'passingScore', 'maxAttempts',
-    'shuffleQuestions', 'shuffleOptions', 'showResults', 'isPublished', 'questions',
+    'shuffleQuestions', 'shuffleOptions', 'showResults', 'isPublished', 'isPreview', 'questions',
     'course', 'targetYear', 'price', 'discountPrice', 'accessType',
   ];
 

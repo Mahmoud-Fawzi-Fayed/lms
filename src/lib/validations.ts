@@ -121,6 +121,7 @@ export const examSchema = z.object({
   shuffleQuestions: z.boolean().default(false),
   shuffleOptions: z.boolean().default(false),
   showResults: z.boolean().default(true),
+  isPreview: z.boolean().default(false),
   questions: z.array(questionSchema),
 });
 

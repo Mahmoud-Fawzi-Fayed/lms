@@ -46,6 +46,7 @@ export default function InstructorExamsPage() {
     shuffleOptions: false,
     showResults: true,
     isPublished: false,
+    isPreview: false,
     questions: [
       {
         type: 'mcq' as 'mcq' | 'single' | 'truefalse' | 'fillinblank',
@@ -182,6 +183,7 @@ export default function InstructorExamsPage() {
         shuffleOptions: form.shuffleOptions,
         showResults: form.showResults,
         isPublished: form.isPublished,
+        isPreview: form.isPreview,
         questions: form.questions.map((q, qi) => ({
           ...q,
           points: Number(q.points),
@@ -219,6 +221,7 @@ export default function InstructorExamsPage() {
           shuffleOptions: false,
           showResults: true,
           isPublished: false,
+          isPreview: false,
           questions: [{
             type: 'mcq',
             text: '',
@@ -282,6 +285,7 @@ export default function InstructorExamsPage() {
         shuffleOptions: !!e.shuffleOptions,
         showResults: e.showResults !== false,
         isPublished: e.isPublished,
+        isPreview: !!e.isPreview,
         questions: e.questions.map((q: any) => ({
           type: q.type === 'single' ? 'mcq' : q.type,
           text: q.text,
@@ -569,6 +573,7 @@ export default function InstructorExamsPage() {
                   { key: 'shuffleQuestions',  label: 'ترتيب عشوائي للأسئلة' },
                   { key: 'shuffleOptions',    label: 'ترتيب عشوائي للإجابات' },
                   { key: 'isPublished',       label: 'نشر الاختبار' },
+                  ...(form.course ? [{ key: 'isPreview', label: 'معاينة مجانية (متاح بدون تسجيل في الكورس)' }] : []),
                 ] as { key: keyof typeof form; label: string }[]).map(({ key, label }) => (
                   <label key={key} className="flex items-center justify-between gap-3 cursor-pointer select-none bg-white rounded-lg px-3 py-2 border border-slate-100">
                     <span className="text-sm text-slate-700">{label}</span>

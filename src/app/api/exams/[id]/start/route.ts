@@ -16,8 +16,8 @@ export const POST = withAuth(async (req, user) => {
     return apiError('هذا الاختبار غير متاح لسنتك الدراسية', 403);
   }
 
-  // If exam is linked to a course, require enrollment in that course.
-  if (exam.course) {
+  // If exam is linked to a course, require enrollment (unless isPreview)
+  if (exam.course && !exam.isPreview) {
     const enrollment = await Enrollment.findOne({
       user: user.id,
       course: exam.course,

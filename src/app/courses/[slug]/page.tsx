@@ -21,6 +21,7 @@ export default function CourseDetailPage() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [previewModal, setPreviewModal] = useState<{ open: boolean; contentUrl: string; type: string; title: string; textContent: string }>({ open: false, contentUrl: '', type: '', title: '', textContent: '' });
+  const [courseExams, setCourseExams] = useState<any[]>([]);
 
   useEffect(() => {
     fetchCourse();
@@ -33,11 +34,25 @@ export default function CourseDetailPage() {
       if (data.success) {
         setCourse(data.data.course);
         setIsEnrolled(data.data.isEnrolled);
+        // Fetch exams linked to this course
+        fetchCourseExams(data.data.course._id);
       }
     } catch (error) {
       console.error('Failed to fetch course:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCourseExams = async (courseId: string) => {
+    try {
+      const res = await fetch(`/api/exams?courseId=${courseId}`);
+      const data = await res.json();
+      if (data.success) {
+        setCourseExams(data.data.exams || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch course exams:', error);
     }
   };
 
@@ -308,7 +323,7 @@ export default function CourseDetailPage() {
             {[
               { key: 'overview', label: 'نظرة عامة' },
               { key: 'curriculum', label: 'المنهج' },
-              { key: 'exams', label: 'الاختبارات' },
+              ...(courseExams.length > 0 ? [{ key: 'exams', label: 'الاختبارات' }] : []),
             ].map(tab => (
               <button
                 key={tab.key}
@@ -427,22 +442,60 @@ export default function CourseDetailPage() {
             </div>
           )}
 
-          {activeTab === 'exams' && (
+          {activeTab === 'exams' && courseExams.length > 0 && (
             <div className="max-w-3xl">
-              <h2 className="text-xl font-bold text-slate-900 mb-4">اختبارات الكورس</h2>
-              <p className="text-slate-600 mb-6">
-                {isEnrolled
-                  ? 'خُض الاختبارات لتقييم مستواك وتصدّر قائمة المتفوقين.'
-                  : 'سجّل في الكورس للوصول إلى الاختبارات وقوائم المتفوقين.'}
-              </p>
-              {isEnrolled && (
-                <Link
-                  href={`/exams?courseId=${course._id}`}
-                  className="inline-block px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
-                >
-                  عرض الاختبارات
-                </Link>
-              )}
+              <h2 className="text-xl font-bold text-slate-900 mb-6">
+                اختبارات الكورس ({courseExams.length} اختبار)
+              </h2>
+              <div className="space-y-4">
+                {courseExams.map((exam: any) => (
+                  <div key={exam._id} className="border border-slate-200 rounded-xl p-5 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold text-slate-900">{exam.title}</h3>
+                          {exam.isPreview && (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                              معاينة مجانية
+                            </span>
+                          )}
+                        </div>
+                        {exam.description && (
+                          <p className="text-sm text-slate-600 mb-3">{exam.description}</p>
+                        )}
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                          <span className="flex items-center gap-1">
+                            📝 {exam.questions?.length || 0} سؤال
+                          </span>
+                          <span className="flex items-center gap-1">
+                            ⏱️ {exam.duration} دقيقة
+                          </span>
+                          <span className="flex items-center gap-1">
+                            🎯 درجة النجاح: {exam.passingScore}%
+                          </span>
+                          <span className="flex items-center gap-1">
+                            🔄 {exam.maxAttempts} محاولة
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        {isEnrolled || exam.isPreview ? (
+                          <Link
+                            href={`/exams/take/${exam._id}`}
+                            className="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors whitespace-nowrap"
+                          >
+                            ابدأ الاختبار
+                          </Link>
+                        ) : (
+                          <span className="inline-block px-4 py-2 bg-slate-100 text-slate-500 text-sm rounded-xl whitespace-nowrap">
+                            🔒 سجّل أولاً
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </section>

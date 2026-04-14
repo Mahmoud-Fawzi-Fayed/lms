@@ -28,6 +28,7 @@ export interface IExam extends Document {
   shuffleOptions: boolean;
   showResults: boolean; // Show correct answers after submission
   isPublished: boolean;
+  isPreview: boolean; // Free preview for paid courses
   questions: IQuestion[];
   createdAt: Date;
   updatedAt: Date;
@@ -78,6 +79,7 @@ const examSchema = new Schema<IExam>(
     shuffleOptions: { type: Boolean, default: false },
     showResults: { type: Boolean, default: true },
     isPublished: { type: Boolean, default: false },
+    isPreview: { type: Boolean, default: false },
     questions: [questionSchema],
   },
   { timestamps: true }
