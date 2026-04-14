@@ -95,7 +95,7 @@ export const POST = withAuth(async (req, user) => {
     attempt,
     exam: sanitizeExamForAttempt(exam),
   });
-}, ['student', 'admin']);
+}, ['student', 'instructor', 'admin']);
 
 function sanitizeExamForAttempt(exam: any) {
   // Normalize legacy type names (old data used "single" for MCQ)

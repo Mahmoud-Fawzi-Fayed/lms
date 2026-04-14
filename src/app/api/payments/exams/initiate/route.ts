@@ -134,4 +134,4 @@ export const POST = withAuth(async (req, user) => {
     paymentId: payment._id,
     ...paymobResult,
   });
-}, ['student', 'admin']);
+}, ['student', 'instructor', 'admin']);

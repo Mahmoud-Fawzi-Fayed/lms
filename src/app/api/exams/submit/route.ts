@@ -121,4 +121,4 @@ export const POST = withAuth(async (req, user) => {
   }
 
   return apiSuccess(result);
-}, ['student', 'admin']);
+}, ['student', 'instructor', 'admin']);
