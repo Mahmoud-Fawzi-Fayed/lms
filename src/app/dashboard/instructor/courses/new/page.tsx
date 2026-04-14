@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 
 const instructorLinks = [
@@ -155,7 +156,7 @@ export default function CreateCoursePage() {
     }
 
     updated[moduleIndex].lessons[lessonIndex].file = file || undefined;
-    if (file && updated[moduleIndex].lessons[lessonIndex].type === 'video') {
+    if (file && (updated[moduleIndex].lessons[lessonIndex].type === 'video' || updated[moduleIndex].lessons[lessonIndex].type === 'pdf')) {
       const previewUrl = URL.createObjectURL(file);
       updated[moduleIndex].lessons[lessonIndex].previewUrl = previewUrl;
       previewUrlsRef.current.add(previewUrl);
@@ -596,6 +597,11 @@ export default function CreateCoursePage() {
                                 controls
                                 className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
                               />
+                            </div>
+                          )}
+                          {lesson.type === 'pdf' && lesson.previewUrl && (
+                            <div className="mt-3">
+                              <PdfCanvasViewer src={lesson.previewUrl} protected={false} maxHeight="400px" />
                             </div>
                           )}
                         </div>

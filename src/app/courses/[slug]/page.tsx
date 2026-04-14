@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { formatPrice, formatDuration } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
@@ -182,8 +183,19 @@ export default function CourseDetailPage() {
       <Navbar />
       <main>
         {/* Course Header */}
-        <section className="bg-gradient-to-l from-slate-900 to-blue-950 text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <section className="relative text-white overflow-hidden">
+          {/* Background: thumbnail or gradient fallback */}
+          {course.thumbnail ? (
+            <>
+              <div className="absolute inset-0">
+                <img src={course.thumbnail} alt="" className="w-full h-full object-cover" />
+              </div>
+              <div className="absolute inset-0 bg-gradient-to-l from-slate-900/95 to-blue-950/90" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-l from-slate-900 to-blue-950" />
+          )}
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
               <div className="lg:col-span-2">
                 <div className="flex items-center gap-2 text-sm mb-4">
@@ -643,36 +655,7 @@ function PreviewVideo({ url }: { url: string }) {
   );
 }
 
-/* ── Protected PDF Viewer component ── */
+/* ── Protected PDF Viewer component — renders to canvas via PDF.js ── */
 function PreviewPdf({ url }: { url: string }) {
-  const [blobUrl, setBlobUrl] = useState<string>('');
-  const [err, setErr] = useState(false);
-
-  useEffect(() => {
-    fetch(url, { credentials: 'include', headers: { 'X-Content-Request': '1' } })
-      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
-      .then(b => {
-        const u = URL.createObjectURL(b);
-        setBlobUrl(u);
-        // Revoke after a short delay — iframe grabs data, URL becomes useless
-        setTimeout(() => URL.revokeObjectURL(u), 5000);
-      })
-      .catch(() => setErr(true));
-  }, [url]);
-
-  if (err) return <div className="text-white text-center py-12">فشل تحميل الملف</div>;
-  if (!blobUrl) return <div className="text-white text-center py-12"><div className="animate-spin inline-block w-8 h-8 border-2 border-white border-t-transparent rounded-full" /></div>;
-
-  return (
-    <div className="relative" onContextMenu={(e) => e.preventDefault()}>
-      <iframe
-        src={blobUrl + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH'}
-        className="w-full rounded-xl bg-white"
-        style={{ height: '85vh', border: 'none' }}
-        sandbox="allow-same-origin allow-scripts"
-      />
-      {/* Full overlay blocks all interaction with PDF — no right-click, no save */}
-      <div className="absolute inset-0 z-10" onContextMenu={(e) => e.preventDefault()} />
-    </div>
-  );
+  return <PdfCanvasViewer src={url} protected />;
 }

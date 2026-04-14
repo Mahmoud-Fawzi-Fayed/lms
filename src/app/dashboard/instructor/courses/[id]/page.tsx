@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 
 type LessonType = 'video' | 'pdf' | 'text';
@@ -53,7 +54,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
   const [uploadError, setUploadError] = useState('');
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [previewingKey, setPreviewingKey] = useState<string | null>(null);
-  const [videoPreviewUrls, setVideoPreviewUrls] = useState<Record<string, string>>({});
+  const [filePreviewUrls, setFilePreviewUrls] = useState<Record<string, string>>({});
   const [lessonSettings, setLessonSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState<string | null>(null);
   const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set([0]));
@@ -265,10 +266,10 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
     }
   };
 
-  const loadVideoPreview = async (mi: number, li: number, lessonId?: string) => {
+  const loadFilePreview = async (mi: number, li: number, lessonId?: string, lessonType?: string) => {
     if (!lessonId) return;
     const key = `${mi}-${li}`;
-    if (videoPreviewUrls[key]) return;
+    if (filePreviewUrls[key]) return;
     setPreviewingKey(key);
     try {
       const tokenRes = await fetch(`/api/courses/${id}/content-token?lessonId=${lessonId}`);
@@ -278,9 +279,21 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         return;
       }
       const token = tokenData.data.token;
-      setVideoPreviewUrls((prev) => ({ ...prev, [key]: `/api/content/${token}` }));
+      const contentUrl = `/api/content/${token}?mode=raw`;
+      if (lessonType === 'pdf') {
+        // PDF: store the URL — PdfCanvasViewer will fetch it
+        setFilePreviewUrls((prev) => ({ ...prev, [key]: contentUrl }));
+      } else {
+        // Video: fetch as blob with custom header
+        const res = await fetch(contentUrl, { credentials: 'include', headers: { 'X-Content-Request': '1' } });
+        if (!res.ok) throw new Error();
+        const raw = await res.blob();
+        const blob = new Blob([raw], { type: 'video/mp4' });
+        const blobUrl = URL.createObjectURL(blob);
+        setFilePreviewUrls((prev) => ({ ...prev, [key]: blobUrl }));
+      }
     } catch {
-      setUploadError('فشل تحميل معاينة الفيديو');
+      setUploadError('فشل تحميل المعاينة');
     } finally {
       setPreviewingKey(null);
     }
@@ -493,15 +506,13 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     lesson.fileUrl ? (
                                       <div className="flex items-center gap-1.5">
                                         <span className="text-xs text-green-600 font-medium">✓ ملف محمل</span>
-                                        {lesson.type === 'video' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => loadVideoPreview(mi, li, lesson._id)}
-                                            className="text-xs text-indigo-600 hover:underline"
-                                          >
-                                            {previewingKey === key ? 'تحميل...' : 'معاينة'}
-                                          </button>
-                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => loadFilePreview(mi, li, lesson._id, lesson.type)}
+                                          className="text-xs text-indigo-600 hover:underline"
+                                        >
+                                          {previewingKey === key ? 'تحميل...' : 'معاينة'}
+                                        </button>
                                         <label className="text-xs text-blue-500 cursor-pointer hover:underline">
                                           استبدال
                                           <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
@@ -529,12 +540,15 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     placeholder="محتوى الدرس..." rows={3}
                                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-blue-400 resize-none text-slate-700" />
                                 )}
-                                {lesson.type === 'video' && videoPreviewUrls[key] && (
+                                {filePreviewUrls[key] && lesson.type === 'video' && (
                                   <video
-                                    src={videoPreviewUrls[key]}
+                                    src={filePreviewUrls[key]}
                                     controls
                                     className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
                                   />
+                                )}
+                                {filePreviewUrls[key] && lesson.type === 'pdf' && (
+                                  <PdfCanvasViewer src={filePreviewUrls[key]} protected maxHeight="400px" />
                                 )}
                               </div>
                               <button type="button" onClick={() => removeLesson(mi, li)}
