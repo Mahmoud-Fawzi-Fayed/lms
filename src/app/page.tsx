@@ -21,7 +21,7 @@ export default function HomePage() {
           backgroundAttachment: 'fixed'
         }}>
           <div className="absolute inset-0 bg-black/20" />
-          <div className="w-full relative z-10" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5)' }}>
+          <div className="w-full relative z-10" style={{ textShadow: '0 2px 5px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.5)' }}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 h-full">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-md rounded-full text-white text-xs sm:text-sm mb-6 md:mb-8 border border-white/40">
