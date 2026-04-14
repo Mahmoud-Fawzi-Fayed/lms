@@ -39,15 +39,23 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         let data: ArrayBuffer;
         if (isProtected) {
           const res = await fetch(src, { credentials: 'include', headers: { 'X-Content-Request': '1' } });
-          if (!res.ok) throw new Error('Failed to fetch');
+          if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+          const ct = res.headers.get('content-type') || '';
+          if (!ct.includes('pdf') && !ct.includes('octet-stream')) {
+            throw new Error(`Unexpected content-type: ${ct}`);
+          }
           data = await res.arrayBuffer();
         } else {
+          // unprotected — local blob or direct URL
           const res = await fetch(src);
-          if (!res.ok) throw new Error('Failed to fetch');
+          if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
           data = await res.arrayBuffer();
         }
 
-        if (cancelled) return;
+        if (cancelled || !data.byteLength) {
+          if (!cancelled) throw new Error('Empty PDF');
+          return;
+        }
 
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         if (cancelled) return;
