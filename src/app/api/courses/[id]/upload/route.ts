@@ -37,6 +37,11 @@ export const POST = withAuth(async (req, user) => {
 
   const file = formData.get('file') as File;
   const lessonType = formData.get('type') as string;
+  const uploadId = String(formData.get('uploadId') || '');
+  const chunkIndex = Number(formData.get('chunkIndex') || 0);
+  const totalChunks = Number(formData.get('totalChunks') || 1);
+  const originalFileName = String(formData.get('originalFileName') || file?.name || '');
+  const totalFileSize = Number(formData.get('totalFileSize') || file?.size || 0);
 
   if (!file) return apiError('لم يتم اختيار ملف', 400);
 
@@ -84,7 +89,7 @@ export const POST = withAuth(async (req, user) => {
   const allowed = allowedTypes[lessonType];
   if (!allowed) return apiError('نوع الدرس غير صالح', 400);
 
-  const fileExt = path.extname(file.name || '').toLowerCase();
+  const fileExt = path.extname(originalFileName || file.name || '').toLowerCase();
   const isMimeAllowed = !!file.type && (allowed.mimes.includes(file.type) || (lessonType === 'video' && file.type.startsWith('video/')));
   const isExtAllowed = allowed.exts.includes(fileExt);
 
@@ -94,7 +99,7 @@ export const POST = withAuth(async (req, user) => {
 
   // File size limits: 1.5GB for video, 50MB for PDF
   const maxSize = lessonType === 'video' ? Math.floor(1.5 * 1024 * 1024 * 1024) : 50 * 1024 * 1024;
-  if (file.size > maxSize) {
+  if ((totalFileSize || file.size) > maxSize) {
     return apiError(`حجم الملف كبير. الحد الأقصى: ${lessonType === 'video' ? '1.5GB' : '50MB'}`, 400);
   }
 
@@ -105,7 +110,8 @@ export const POST = withAuth(async (req, user) => {
 
   // Generate secure filename
   const ext = fileExt || (lessonType === 'video' ? '.mp4' : '.pdf');
-  const secureFilename = `${courseId}_${crypto.randomUUID()}${ext}`;
+  const stableUploadId = uploadId || crypto.randomUUID();
+  const secureFilename = `${courseId}_${stableUploadId}${ext}`;
   const uploadDir = path.join(process.cwd(), 'uploads', lessonType + 's');
 
   try {
@@ -117,9 +123,34 @@ export const POST = withAuth(async (req, user) => {
 
   const filePath = path.join(uploadDir, secureFilename);
   try {
-    const webStream = file.stream();
-    const nodeStream = Readable.fromWeb(webStream as any);
-    await pipeline(nodeStream, createWriteStream(filePath));
+    if (totalChunks > 1) {
+      const tempDir = path.join(process.cwd(), 'uploads', 'tmp');
+      await fs.mkdir(tempDir, { recursive: true });
+      const tempPath = path.join(tempDir, `${courseId}_${stableUploadId}${ext}.part`);
+      const chunkBuffer = Buffer.from(await file.arrayBuffer());
+
+      if (chunkIndex === 0) {
+        await fs.writeFile(tempPath, chunkBuffer);
+      } else {
+        await fs.appendFile(tempPath, chunkBuffer);
+      }
+
+      if (chunkIndex < totalChunks - 1) {
+        return apiSuccess({
+          partial: true,
+          chunkIndex,
+          totalChunks,
+          percent: Math.round(((chunkIndex + 1) / totalChunks) * 100),
+          message: 'تم استلام جزء من الملف',
+        });
+      }
+
+      await fs.rename(tempPath, filePath);
+    } else {
+      const webStream = file.stream();
+      const nodeStream = Readable.fromWeb(webStream as any);
+      await pipeline(nodeStream, createWriteStream(filePath));
+    }
   } catch (e: any) {
     console.error('[upload] write error:', e?.message);
     return apiError('فشل كتابة الملف: ' + e?.message, 500);

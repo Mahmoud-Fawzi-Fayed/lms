@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
+import { uploadFileWithProgress } from '@/lib/upload-client';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 
 type LessonType = 'video' | 'pdf' | 'text';
@@ -52,7 +53,9 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
 
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
+  const [thumbnailProgress, setThumbnailProgress] = useState(0);
   const [previewingKey, setPreviewingKey] = useState<string | null>(null);
   const [filePreviewUrls, setFilePreviewUrls] = useState<Record<string, string>>({});
   const [lessonSettings, setLessonSettings] = useState<Record<string, any>>({});
@@ -151,22 +154,26 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
 
   const handleThumbnailUpload = async (file: File) => {
     setUploadingThumbnail(true);
+    setThumbnailProgress(0);
     setUploadError('');
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('type', 'thumbnail');
     try {
-      const res = await fetch(`/api/courses/${id}/upload`, { method: 'POST', body: fd });
-      const data = await res.json();
+      const data = await uploadFileWithProgress({
+        url: `/api/courses/${id}/upload`,
+        file,
+        fields: { type: 'thumbnail' },
+        onProgress: setThumbnailProgress,
+      });
+
       if (data.success) {
         setForm((prev: any) => ({ ...prev, thumbnail: data.data.thumbnail }));
       } else {
         setUploadError(data.error || 'فشل رفع الصورة');
       }
-    } catch {
-      setUploadError('فشل رفع الصورة');
+    } catch (e: any) {
+      setUploadError(e?.message || 'فشل رفع الصورة');
     } finally {
       setUploadingThumbnail(false);
+      setTimeout(() => setThumbnailProgress(0), 600);
     }
   };
 
@@ -230,17 +237,27 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
     const key = `${mi}-${li}`;
     setUploadingKey(key);
     setUploadError('');
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('moduleIndex', mi.toString());
-    fd.append('lessonIndex', li.toString());
-    fd.append('type', lessonType);
+    setUploadProgress((prev) => ({ ...prev, [key]: 0 }));
+
     try {
-      const res = await fetch(`/api/courses/${id}/upload`, { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.success) { await fetchCourse(); } else { setUploadError(data.error || 'فشل رفع الملف'); }
-    } catch {
-      setUploadError('فشل رفع الملف');
+      const data = await uploadFileWithProgress({
+        url: `/api/courses/${id}/upload`,
+        file,
+        fields: {
+          moduleIndex: mi.toString(),
+          lessonIndex: li.toString(),
+          type: lessonType,
+        },
+        onProgress: (percent) => setUploadProgress((prev) => ({ ...prev, [key]: percent })),
+      });
+
+      if (data.success) {
+        await fetchCourse();
+      } else {
+        setUploadError(data.error || 'فشل رفع الملف');
+      }
+    } catch (e: any) {
+      setUploadError(e?.message || 'فشل رفع الملف');
     } finally {
       setUploadingKey(null);
     }
@@ -382,6 +399,17 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleThumbnailUpload(f); e.target.value = ''; }} />
                 </label>
                 <p className="text-xs text-slate-400 mt-1.5">JPEG, PNG, WebP — حد أقصى 5MB</p>
+                {uploadingThumbnail && (
+                  <div className="mt-3 w-64 max-w-full">
+                    <div className="flex items-center justify-between text-xs text-blue-700 mb-1">
+                      <span>رفع الصورة</span>
+                      <span>{thumbnailProgress}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-blue-600 transition-all duration-200" style={{ width: `${thumbnailProgress}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -515,7 +543,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                         </button>
                                         <label className="text-xs text-blue-500 cursor-pointer hover:underline">
                                           استبدال
-                                          <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
+                                          <input type="file" accept={lesson.type === 'video' ? 'video/*' : 'application/pdf'} className="hidden"
                                             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(mi, li, f, lesson.type); }} />
                                         </label>
                                       </div>
@@ -527,7 +555,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     ) : lesson._id ? (
                                       <label className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
                                         رفع {lesson.type === 'video' ? 'فيديو' : 'PDF'}
-                                        <input type="file" accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'} className="hidden"
+                                        <input type="file" accept={lesson.type === 'video' ? 'video/*' : 'application/pdf'} className="hidden"
                                           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(mi, li, f, lesson.type); }} />
                                       </label>
                                     ) : (
@@ -540,15 +568,26 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     placeholder="محتوى الدرس..." rows={3}
                                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-blue-400 resize-none text-slate-700" />
                                 )}
+                                {isUploading && (
+                                  <div className="w-full rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                                    <div className="flex items-center justify-between text-xs text-blue-700 mb-1">
+                                      <span>جاري رفع الملف...</span>
+                                      <span>{uploadProgress[key] || 0}%</span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+                                      <div className="h-full bg-blue-600 transition-all duration-200" style={{ width: `${uploadProgress[key] || 0}%` }} />
+                                    </div>
+                                  </div>
+                                )}
                                 {filePreviewUrls[key] && lesson.type === 'video' && (
                                   <video
                                     src={filePreviewUrls[key]}
                                     controls
-                                    className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
+                                    className="w-full max-h-[75vh] rounded-lg border border-slate-200 bg-black"
                                   />
                                 )}
                                 {filePreviewUrls[key] && lesson.type === 'pdf' && (
-                                  <PdfCanvasViewer src={filePreviewUrls[key]} protected maxHeight="400px" />
+                                  <PdfCanvasViewer src={filePreviewUrls[key]} protected maxHeight="75vh" />
                                 )}
                               </div>
                               <button type="button" onClick={() => removeLesson(mi, li)}

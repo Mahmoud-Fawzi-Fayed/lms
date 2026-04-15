@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
+import { uploadFileWithProgress } from '@/lib/upload-client';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 
 const instructorLinks = [
@@ -44,6 +45,7 @@ export default function CreateCoursePage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [uploadStatus, setUploadStatus] = useState<{ label: string; percent: number } | null>(null);
   const [step, setStep] = useState(1);
   const previewUrlsRef = useRef<Set<string>>(new Set());
   const [expandedModules, setExpandedModules] = useState<Set<number>>(new Set([0]));
@@ -231,31 +233,41 @@ export default function CreateCoursePage() {
 
       const courseId = data.data._id;
 
-      // Upload selected files sequentially to avoid memory spikes on large videos
-      for (const [mi, mod] of modules.entries()) {
-        for (const [li, lesson] of mod.lessons.entries()) {
-          if (!lesson.file) continue;
+      // Upload selected files sequentially with progress tracking and Cloudflare-safe chunking
+      const uploadItems = modules.flatMap((mod, mi) => mod.lessons.map((lesson, li) => ({ lesson, mi, li }))).filter((x) => !!x.lesson.file);
+      const totalItems = Math.max(uploadItems.length, 1);
 
-          const fd = new FormData();
-          fd.append('file', lesson.file);
-          fd.append('moduleIndex', mi.toString());
-          fd.append('lessonIndex', li.toString());
-          fd.append('type', lesson.type);
+      for (let index = 0; index < uploadItems.length; index++) {
+        const { lesson, mi, li } = uploadItems[index];
+        setUploadStatus({ label: lesson.title || lesson.file!.name, percent: Math.round((index / totalItems) * 100) });
 
-          const uploadRes = await fetch(`/api/courses/${courseId}/upload`, { method: 'POST', body: fd });
-          const uploadData = await uploadRes.json();
-          if (!uploadData.success) {
-            setError(uploadData.error || 'فشل رفع أحد الملفات');
-            return;
-          }
+        const uploadData = await uploadFileWithProgress({
+          url: `/api/courses/${courseId}/upload`,
+          file: lesson.file!,
+          fields: {
+            moduleIndex: mi.toString(),
+            lessonIndex: li.toString(),
+            type: lesson.type,
+          },
+          onProgress: (percent) => {
+            const overallPercent = Math.round(((index + percent / 100) / totalItems) * 100);
+            setUploadStatus({ label: lesson.title || lesson.file!.name, percent: overallPercent });
+          },
+        });
+
+        if (!uploadData.success) {
+          setError(uploadData.error || 'فشل رفع أحد الملفات');
+          return;
         }
       }
 
+      setUploadStatus(null);
       router.push('/dashboard/instructor/courses');
     } catch (err) {
       setError('حدث خطأ ما');
     } finally {
       setSaving(false);
+      setUploadStatus(null);
     }
   };
 
@@ -273,6 +285,18 @@ export default function CreateCoursePage() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6">{error}</div>
+        )}
+
+        {uploadStatus && (
+          <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl mb-6">
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span>جاري رفع: {uploadStatus.label}</span>
+              <span>{uploadStatus.percent}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+              <div className="h-full bg-blue-600 transition-all duration-200" style={{ width: `${uploadStatus.percent}%` }} />
+            </div>
+          </div>
         )}
 
         {/* Step Indicator */}
@@ -582,13 +606,13 @@ export default function CreateCoursePage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                             <span className={lesson.file ? 'text-green-700 font-medium' : 'text-slate-500'}>
-                              {lesson.file ? `✓ ${lesson.file.name}` : `اختر ملف ${lesson.type === 'video' ? 'فيديو (MP4 / WebM)' : 'PDF'}`}
+                              {lesson.file ? `✓ ${lesson.file.name}` : `اختر ملف ${lesson.type === 'video' ? 'فيديو' : 'PDF'}`}
                             </span>
                           </label>
                           <input
                             id={`file-${mi}-${li}`}
                             type="file"
-                            accept={lesson.type === 'video' ? 'video/mp4,video/webm,video/ogg' : 'application/pdf'}
+                            accept={lesson.type === 'video' ? 'video/*' : 'application/pdf'}
                             className="hidden"
                             onChange={(e) => handleLessonFile(mi, li, e.target.files?.[0] || null)}
                           />
@@ -597,14 +621,13 @@ export default function CreateCoursePage() {
                               <video
                                 src={lesson.previewUrl}
                                 controls
-                                className="w-full max-h-64 rounded-lg border border-slate-200 bg-black"
+                                className="w-full max-h-[75vh] rounded-lg border border-slate-200 bg-black"
                               />
                             </div>
                           )}
                           {lesson.type === 'pdf' && lesson.previewUrl && (
                             <div className="mt-3">
-                              <PdfCanvasViewer src={lesson.previewUrl} protected={false} maxHeight="400px" />
-                            </div>
+                              <PdfCanvasViewer src={lesson.previewUrl} protected={false} maxHeight="75vh" />                            </div>
                           )}
                         </div>
                       )}

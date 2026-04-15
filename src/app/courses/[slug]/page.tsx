@@ -539,7 +539,7 @@ export default function CourseDetailPage() {
             </div>
 
             {/* Content area */}
-            <div className="relative z-30 w-full max-w-5xl mx-4" style={{ maxHeight: '90vh' }}>
+            <div className="relative z-30 w-[96vw] max-w-[1800px] mx-2 md:mx-4" style={{ maxHeight: '96vh' }}>
               {/* VIDEO */}
               {previewModal.type === 'video' && (
                 <PreviewVideo url={previewModal.contentUrl} />
@@ -553,7 +553,7 @@ export default function CourseDetailPage() {
               {/* TEXT */}
               {previewModal.type === 'text' && (
                 <div
-                  className="bg-white rounded-2xl p-6 md:p-8 max-h-[80vh] overflow-y-auto text-right select-none"
+                  className="bg-white rounded-2xl p-6 md:p-8 max-h-[88vh] overflow-y-auto text-right select-none"
                   dir="rtl"
                   style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                   onCopy={(e) => e.preventDefault()}
@@ -671,7 +671,7 @@ function PreviewVideo({ url }: { url: string }) {
       {/* Hidden video — source for canvas, invisible to user */}
       <video ref={videoRef} playsInline disablePictureInPicture style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none', zIndex: -1 }} />
       {/* Visible canvas — right-click shows "Save Image" not "Save Video" */}
-      <canvas ref={canvasRef} className="w-full max-h-[85vh] block" style={{ background: '#000' }} onContextMenu={(e) => e.preventDefault()} />
+      <canvas ref={canvasRef} className="w-full max-h-[90vh] block" style={{ background: '#000' }} onContextMenu={(e) => e.preventDefault()} />
 
       {loading && <div className="absolute inset-0 flex items-center justify-center"><div className="animate-spin w-10 h-10 border-2 border-white border-t-transparent rounded-full" /></div>}
       {!playing && !loading && (
