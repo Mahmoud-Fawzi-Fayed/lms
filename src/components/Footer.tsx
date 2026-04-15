@@ -10,12 +10,12 @@ function LogoIcon() {
 
 export default function Footer() {
   return (
-    <footer className="bg-accent-900 text-accent-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
+    <footer className="bg-accent-900 text-accent-100 animate-fade-in">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10 mb-10 md:mb-12 text-center md:text-right">
           {/* Brand */}
           <div className="col-span-1">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center justify-center md:justify-start gap-2 mb-4">
               <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
                 <LogoIcon />
               </div>
@@ -61,7 +61,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-accent-800 pt-8 text-center text-sm text-accent-400">
+        <div className="border-t border-accent-800 pt-6 md:pt-8 text-center text-sm text-accent-400">
           © {new Date().getFullYear()} أ/ محمد الصباغ. جميع الحقوق محفوظة.
         </div>
       </div>

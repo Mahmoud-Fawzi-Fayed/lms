@@ -23,9 +23,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ar" dir="rtl" className={cairo.variable}>
-      <body className="min-h-screen bg-gray-50 font-arabic">
+      <body className="min-h-screen bg-gray-50 font-arabic overflow-x-hidden">
         <Providers>
-          <ContentProtection>{children}</ContentProtection>
+          <ContentProtection>
+            <div className="page-transition min-h-screen">{children}</div>
+          </ContentProtection>
         </Providers>
       </body>
     </html>
