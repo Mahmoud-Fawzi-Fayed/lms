@@ -3,25 +3,32 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 
 export default function HomePage() {
-  // Background position controls - adjust these numbers directly
-  const bgPositionTop = 0;    // Top/Bottom: negative shows more face, positive shows more bottom
-  const bgPositionLeft = -500;   // Left/Right in pixels: move face to left side (try: -300, -400, -500, -600)
-
-
   return (
     <>
       <Navbar />
       <main>
         {/* Hero Section */}
-        <section className="relative text-white overflow-hidden min-h-screen flex items-center w-full" style={{
-          backgroundImage: 'url(/BG.png)',
-          backgroundSize: '135%',
-          backgroundPosition: `${bgPositionLeft}px ${bgPositionTop}px`,
-          backgroundRepeat: 'no-repeat',
-          backgroundAttachment: 'fixed'
-        }}>
-          <div className="absolute inset-0 bg-black/20" />
-          <div className="w-full relative z-10" style={{ textShadow: '0 2px 5px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.5)' }}>
+        <section className="relative text-white overflow-hidden min-h-[calc(100vh-4rem)] flex items-center w-full animate-fade-in">
+          <div
+            className="absolute inset-0 md:hidden"
+            style={{
+              backgroundImage: 'url(/BG.png)',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center top',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+          <div
+            className="absolute inset-0 hidden md:block"
+            style={{
+              backgroundImage: 'url(/BG.png)',
+              backgroundSize: '118%',
+              backgroundPosition: 'left -220px top 0px',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/35 via-slate-900/25 to-slate-950/50 md:bg-black/20" />
+          <div className="w-full relative z-10" style={{ textShadow: '0 2px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.45)' }}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 h-full">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/20 backdrop-blur-md rounded-full text-white text-xs sm:text-sm mb-6 md:mb-8 border border-white/40">

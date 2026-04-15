@@ -103,6 +103,20 @@ export default function ContentProtection({
     document.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason as any;
+      if (
+        reason &&
+        typeof reason === 'object' &&
+        reason.httpError === false &&
+        reason.httpStatus === 200 &&
+        reason.code === 403
+      ) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
     // Prevent drag start (dragging images/content)
     const handleDragStart = (e: DragEvent) => {
       e.preventDefault();
@@ -154,6 +168,7 @@ export default function ContentProtection({
       document.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       document.removeEventListener('dragstart', handleDragStart);
       document.removeEventListener('enterpictureinpicture', handlePiP, true);
       window.removeEventListener('focus', handleFocus);
