@@ -4,9 +4,13 @@ import { Course } from '@/models';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
+import { createWriteStream } from 'fs';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 
-// Allow up to 5 minutes for large video uploads
-export const maxDuration = 300;
+// Allow large uploads and ensure Node runtime for filesystem streaming
+export const runtime = 'nodejs';
+export const maxDuration = 1800;
 
 // POST /api/courses/[id]/upload - Upload course content (video/pdf)
 export const POST = withAuth(async (req, user) => {
@@ -45,7 +49,7 @@ export const POST = withAuth(async (req, user) => {
     const maxImgSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxImgSize) return apiError('حجم الصورة كبير. الحد الأقصى: 5MB', 400);
 
-    const ext = path.extname(file.name || '.jpg') || '.jpg';
+    const ext = path.extname(file.name || '.jpg').toLowerCase() || '.jpg';
     const secureFilename = `thumb_${courseId}_${crypto.randomUUID()}${ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'thumbnails');
     await fs.mkdir(uploadDir, { recursive: true });
@@ -66,21 +70,32 @@ export const POST = withAuth(async (req, user) => {
   if (isNaN(moduleIndex) || isNaN(lessonIndex)) return apiError('فهرس الوحدة أو الدرس غير صحيح', 400);
 
   // Validate file type
-  const allowedTypes: Record<string, string[]> = {
-    video: ['video/mp4', 'video/webm', 'video/ogg'],
-    pdf: ['application/pdf'],
+  const allowedTypes: Record<string, { mimes: string[]; exts: string[] }> = {
+    video: {
+      mimes: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-m4v', 'video/x-msvideo', 'video/x-matroska'],
+      exts: ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.avi', '.mkv'],
+    },
+    pdf: {
+      mimes: ['application/pdf'],
+      exts: ['.pdf'],
+    },
   };
 
   const allowed = allowedTypes[lessonType];
   if (!allowed) return apiError('نوع الدرس غير صالح', 400);
-  if (!allowed.includes(file.type)) {
-    return apiError(`نوع الملف غير مدعوم. الأنواع المدعومة: ${allowed.join(', ')}`, 400);
+
+  const fileExt = path.extname(file.name || '').toLowerCase();
+  const isMimeAllowed = !!file.type && (allowed.mimes.includes(file.type) || (lessonType === 'video' && file.type.startsWith('video/')));
+  const isExtAllowed = allowed.exts.includes(fileExt);
+
+  if (!isMimeAllowed && !isExtAllowed) {
+    return apiError(`نوع الملف غير مدعوم لهذا الدرس`, 400);
   }
 
-  // File size limits: 500MB for video, 50MB for PDF
-  const maxSize = lessonType === 'video' ? 500 * 1024 * 1024 : 50 * 1024 * 1024;
+  // File size limits: 1.5GB for video, 50MB for PDF
+  const maxSize = lessonType === 'video' ? Math.floor(1.5 * 1024 * 1024 * 1024) : 50 * 1024 * 1024;
   if (file.size > maxSize) {
-    return apiError(`حجم الملف كبير. الحد الأقصى: ${maxSize / (1024 * 1024)}MB`, 400);
+    return apiError(`حجم الملف كبير. الحد الأقصى: ${lessonType === 'video' ? '1.5GB' : '50MB'}`, 400);
   }
 
   // Validate indices exist
@@ -89,7 +104,7 @@ export const POST = withAuth(async (req, user) => {
   }
 
   // Generate secure filename
-  const ext = path.extname(file.name || '');
+  const ext = fileExt || (lessonType === 'video' ? '.mp4' : '.pdf');
   const secureFilename = `${courseId}_${crypto.randomUUID()}${ext}`;
   const uploadDir = path.join(process.cwd(), 'uploads', lessonType + 's');
 
@@ -102,9 +117,9 @@ export const POST = withAuth(async (req, user) => {
 
   const filePath = path.join(uploadDir, secureFilename);
   try {
-    const arrayBuf = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuf);
-    await fs.writeFile(filePath, buffer);
+    const webStream = file.stream();
+    const nodeStream = Readable.fromWeb(webStream as any);
+    await pipeline(nodeStream, createWriteStream(filePath));
   } catch (e: any) {
     console.error('[upload] write error:', e?.message);
     return apiError('فشل كتابة الملف: ' + e?.message, 500);

@@ -225,8 +225,8 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
   };
 
   const handleFileUpload = async (mi: number, li: number, file: File, lessonType: string) => {
-    const MAX_SIZE = lessonType === 'video' ? 500 * 1024 * 1024 : 50 * 1024 * 1024;
-    if (file.size > MAX_SIZE) { setUploadError(`حجم الملف كبير. الحد الأقصى: ${lessonType === 'video' ? '500' : '50'} MB`); return; }
+    const MAX_SIZE = lessonType === 'video' ? Math.floor(1.5 * 1024 * 1024 * 1024) : 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) { setUploadError(`حجم الملف كبير. الحد الأقصى: ${lessonType === 'video' ? '1.5GB' : '50MB'}`); return; }
     const key = `${mi}-${li}`;
     setUploadingKey(key);
     setUploadError('');

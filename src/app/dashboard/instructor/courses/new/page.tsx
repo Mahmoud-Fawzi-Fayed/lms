@@ -231,23 +231,25 @@ export default function CreateCoursePage() {
 
       const courseId = data.data._id;
 
-      // Upload any selected files for video/pdf lessons
-      const uploads: Promise<void>[] = [];
-      modules.forEach((mod, mi) => {
-        mod.lessons.forEach((lesson, li) => {
-          if (lesson.file) {
-            const fd = new FormData();
-            fd.append('file', lesson.file);
-            fd.append('moduleIndex', mi.toString());
-            fd.append('lessonIndex', li.toString());
-            fd.append('type', lesson.type);
-            uploads.push(
-              fetch(`/api/courses/${courseId}/upload`, { method: 'POST', body: fd }).then(() => {})
-            );
+      // Upload selected files sequentially to avoid memory spikes on large videos
+      for (const [mi, mod] of modules.entries()) {
+        for (const [li, lesson] of mod.lessons.entries()) {
+          if (!lesson.file) continue;
+
+          const fd = new FormData();
+          fd.append('file', lesson.file);
+          fd.append('moduleIndex', mi.toString());
+          fd.append('lessonIndex', li.toString());
+          fd.append('type', lesson.type);
+
+          const uploadRes = await fetch(`/api/courses/${courseId}/upload`, { method: 'POST', body: fd });
+          const uploadData = await uploadRes.json();
+          if (!uploadData.success) {
+            setError(uploadData.error || 'فشل رفع أحد الملفات');
+            return;
           }
-        });
-      });
-      if (uploads.length) await Promise.all(uploads);
+        }
+      }
 
       router.push('/dashboard/instructor/courses');
     } catch (err) {

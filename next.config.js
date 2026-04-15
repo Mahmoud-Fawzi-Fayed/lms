@@ -5,10 +5,10 @@ const nextConfig = {
       { protocol: 'https', hostname: '**' },
     ],
   },
-  // Allow large file uploads (up to 500MB for videos)
+  // Allow large file uploads (up to 1.5GB for videos)
   experimental: {
     serverActions: {
-      bodySizeLimit: '500mb',
+      bodySizeLimit: '1536mb',
     },
   },
   headers: async () => [

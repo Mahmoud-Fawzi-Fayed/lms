@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { formatPrice } from '@/lib/utils';
@@ -201,11 +200,11 @@ export default function CoursesPage() {
                   {/* Thumbnail */}
                   <div className="relative h-48 bg-gradient-to-br from-primary-100 to-primary-200 overflow-hidden">
                     {course.thumbnail ? (
-                      <Image
+                      <img
                         src={course.thumbnail}
                         alt={course.title}
-                        fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full">
