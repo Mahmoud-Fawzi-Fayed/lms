@@ -1,61 +1,61 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 
 interface PdfCanvasViewerProps {
-  /** Either a URL to fetch (with X-Content-Request header) or a blob URL */
   src: string;
-  /** If true, fetch with custom header (protected API). If false, use src directly */
   protected?: boolean;
-  /** Max height CSS value */
   maxHeight?: string;
 }
 
 /**
- * Renders PDF pages to <canvas> elements using PDF.js.
- * No browser PDF plugin needed — works everywhere.
- * Better for content protection: no toolbar, no "Save As", no download button.
+ * PdfCanvasViewer — renders PDF pages to <canvas> via PDF.js.
+ * Features: device-pixel-ratio crisp rendering, background next-page prerender,
+ * keyboard navigation (← → PageUp PageDown), zoom in/out, no browser PDF plugin.
  */
 export default function PdfCanvasViewer({ src, protected: isProtected = true, maxHeight = '85vh' }: PdfCanvasViewerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.5);
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const canvasRef     = useRef<HTMLCanvasElement>(null);
+  const nextCanvasRef = useRef<HTMLCanvasElement | null>(null); // off-screen pre-render
+  const renderTaskRef = useRef<any>(null);
+  const [loading,      setLoading]     = useState(true);
+  const [pageLoading,  setPageLoading] = useState(false);
+  const [error,        setError]       = useState('');
+  const [currentPage,  setCurrentPage] = useState(1);
+  const [totalPages,   setTotalPages]  = useState(0);
+  const [scale,        setScale]       = useState(1.5);
   const pdfDocRef = useRef<any>(null);
 
+  // ── Watermark: user email burned into every rendered canvas page ────────
+  const { data: sessionData } = useSession();
+  const watermarkRef = useRef('');
+  useEffect(() => {
+    watermarkRef.current = (sessionData?.user as any)?.email ?? (sessionData?.user as any)?.name ?? '';
+  }, [sessionData]);
+
+  // ── Load PDF document ─────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
-
     async function loadPdf() {
       setLoading(true);
       setError('');
       try {
-        // Dynamic import to avoid SSR issues
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
         let data: ArrayBuffer;
         if (isProtected) {
           const res = await fetch(src, { credentials: 'include', headers: { 'X-Content-Request': '1' } });
-          if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
-          const ct = res.headers.get('content-type') || '';
-          if (!ct.includes('pdf') && !ct.includes('octet-stream')) {
-            throw new Error(`Unexpected content-type: ${ct}`);
-          }
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           data = await res.arrayBuffer();
         } else {
-          // unprotected — local blob or direct URL
           const res = await fetch(src);
-          if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
           data = await res.arrayBuffer();
         }
-
-        if (cancelled || !data.byteLength) {
-          if (!cancelled) throw new Error('Empty PDF');
-          return;
-        }
+        if (cancelled) return;
+        if (!data.byteLength) throw new Error('Empty PDF');
 
         const pdf = await pdfjsLib.getDocument({ data }).promise;
         if (cancelled) return;
@@ -65,58 +65,132 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         setCurrentPage(1);
         setLoading(false);
       } catch (err) {
-        if (!cancelled) {
-          console.error('PDF load error:', err);
-          setError('فشل تحميل الملف');
-          setLoading(false);
-        }
+        if (!cancelled) { console.error('PDF load error:', err); setError('فشل تحميل الملف'); setLoading(false); }
       }
     }
-
     loadPdf();
     return () => { cancelled = true; };
   }, [src, isProtected]);
 
-  // Render current page to canvas
-  useEffect(() => {
+  // ── Render page to canvas with device-pixel-ratio support ─────────────────
+  const renderPage = useCallback(async (pageNum: number, targetScale: number, canvas: HTMLCanvasElement) => {
     const pdf = pdfDocRef.current;
-    const container = containerRef.current;
-    if (!pdf || !container || currentPage < 1 || currentPage > totalPages) return;
+    if (!pdf || pageNum < 1 || pageNum > pdf.numPages) return;
 
-    let cancelled = false;
-
-    async function renderPage() {
-      try {
-        const page = await pdf.getPage(currentPage);
-        if (cancelled) return;
-
-        const viewport = page.getViewport({ scale });
-
-        // Reuse or create canvas
-        let canvas = container!.querySelector('canvas') as HTMLCanvasElement | null;
-        if (!canvas) {
-          canvas = document.createElement('canvas');
-          canvas.oncontextmenu = (e) => e.preventDefault();
-          canvas.style.display = 'block';
-          canvas.style.margin = '0 auto';
-          canvas.style.maxWidth = '100%';
-          container!.innerHTML = '';
-          container!.appendChild(canvas);
-        }
-
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        const ctx = canvas.getContext('2d')!;
-        await page.render({ canvasContext: ctx, viewport }).promise;
-      } catch (err) {
-        if (!cancelled) console.error('Page render error:', err);
-      }
+    // Cancel any in-flight render
+    if (renderTaskRef.current) {
+      renderTaskRef.current.cancel();
+      renderTaskRef.current = null;
     }
 
-    renderPage();
-    return () => { cancelled = true; };
-  }, [currentPage, totalPages, scale]);
+    const page     = await pdf.getPage(pageNum);
+    const dpr      = Math.min(window.devicePixelRatio || 1, 2); // cap at 2× to avoid memory blowout
+    const viewport = page.getViewport({ scale: targetScale });
+
+    // Physical canvas size (sharp on HiDPI)
+    canvas.width  = Math.floor(viewport.width  * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    // CSS size (displayed size)
+    canvas.style.width  = Math.floor(viewport.width)  + 'px';
+    canvas.style.height = Math.floor(viewport.height) + 'px';
+
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+
+    const task = page.render({ canvasContext: ctx, viewport });
+    renderTaskRef.current = task;
+    await task.promise;
+    renderTaskRef.current = null;
+
+    // ── Draw repeating diagonal watermark ──────────────────────────────────
+    const wm = watermarkRef.current;
+    if (wm) {
+      const vw = viewport.width;
+      const vh = viewport.height;
+      ctx.save();
+      ctx.globalAlpha = 0.07;
+      ctx.fillStyle = '#111111';
+      const fontSize = Math.max(11, Math.floor(Math.min(vw, vh) * 0.022));
+      ctx.font = `bold ${fontSize}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const cols = 3, rows = 5;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          ctx.save();
+          ctx.translate(vw * (0.15 + c * 0.35), vh * (0.08 + r * 0.22));
+          ctx.rotate(-Math.PI / 7);
+          ctx.fillText(wm, 0, 0);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+  }, []);
+
+  // ── Render on page/scale change ───────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !pdfDocRef.current || loading) return;
+
+    let cancelled = false;
+    setPageLoading(true);
+
+    (async () => {
+      try {
+        await renderPage(currentPage, scale, canvas);
+        if (cancelled) return;
+        setPageLoading(false);
+
+        // Pre-render next page off-screen
+        const pdf = pdfDocRef.current;
+        if (currentPage < totalPages && pdf) {
+          const off = document.createElement('canvas');
+          nextCanvasRef.current = off;
+          try { await renderPage(currentPage + 1, scale, off); } catch { /* ignore prerender error */ }
+        }
+      } catch (err: any) {
+        if (err?.name !== 'RenderingCancelledException' && !cancelled) {
+          console.error('Page render error:', err);
+          setPageLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
+    };
+  }, [currentPage, totalPages, scale, loading, renderPage]);
+
+  // ── Keyboard navigation ───────────────────────────────────────────────────
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      // Block common save / print / dev-tools shortcuts at the PDF surface.
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && ['s', 'p', 'a', 'c', 'u'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        return;
+      }
+      if (e.key === 'PrintScreen') {
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault();
+        setCurrentPage(p => Math.min(totalPages, p + 1));
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        setCurrentPage(p => Math.max(1, p - 1));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [totalPages]);
 
   const goPage = useCallback((delta: number) => {
     setCurrentPage(p => Math.max(1, Math.min(totalPages, p + delta)));
@@ -125,54 +199,75 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
   if (error) return <div className="text-white text-center py-12">{error}</div>;
 
   return (
-    <div className="flex flex-col select-none" onContextMenu={(e) => e.preventDefault()}>
-      {/* PDF Canvas */}
+    <div
+      className="flex flex-col select-none"
+      onContextMenu={e => e.preventDefault()}
+      onCopy={e => e.preventDefault()}
+      onCut={e => e.preventDefault()}
+      onDragStart={e => e.preventDefault()}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } as any}
+    >
+      {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-auto bg-gray-200 rounded-t-xl"
+        className="flex-1 overflow-auto bg-gray-800 rounded-t-xl flex items-start justify-center"
         style={{ maxHeight, minHeight: '300px' }}
       >
-        {loading && (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full" />
+        {loading ? (
+          <div className="flex items-center justify-center h-64 w-full">
+            <div className="flex flex-col items-center gap-3">
+              <div className="animate-spin w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full" />
+              <span className="text-gray-300 text-sm">جاري تحميل الملف...</span>
+            </div>
+          </div>
+        ) : (
+          <div className="relative my-4">
+            {pageLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded z-10 pointer-events-none">
+                <div className="w-8 h-8 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              </div>
+            )}
+            <canvas
+              ref={canvasRef}
+              onContextMenu={e => e.preventDefault()}
+              onDragStart={e => e.preventDefault()}
+              className="block shadow-2xl rounded pointer-events-none"
+              style={{ maxWidth: '100%' }}
+            />
           </div>
         )}
       </div>
 
-      {/* Controls bar */}
+      {/* Control bar */}
       {totalPages > 0 && (
-        <div className="flex items-center justify-between bg-gray-800 text-white px-4 py-2 rounded-b-xl text-sm" dir="ltr">
+        <div className="flex items-center justify-between bg-gray-900 text-white px-4 py-2 rounded-b-xl text-sm" dir="ltr">
+          {/* Page navigation */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => goPage(-1)}
-              disabled={currentPage <= 1}
-              className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ◀
+            <button onClick={() => goPage(-1)} disabled={currentPage <= 1}
+              className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-lg hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-base font-bold">
+              ‹
             </button>
-            <span className="min-w-[80px] text-center font-mono">
+            <span className="min-w-[80px] text-center font-mono text-xs tabular-nums">
               {currentPage} / {totalPages}
             </span>
-            <button
-              onClick={() => goPage(1)}
-              disabled={currentPage >= totalPages}
-              className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ▶
+            <button onClick={() => goPage(1)} disabled={currentPage >= totalPages}
+              className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-lg hover:bg-gray-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-base font-bold">
+              ›
             </button>
           </div>
+
+          {/* Keyboard hint */}
+          <span className="text-gray-500 text-xs hidden sm:inline">← → للتنقل</span>
+
+          {/* Zoom */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
-              className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-            >
+            <button onClick={() => setScale(s => Math.max(0.5, +(s - 0.25).toFixed(2)))}
+              className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors font-bold text-lg leading-none">
               −
             </button>
-            <span className="min-w-[50px] text-center font-mono text-xs">{Math.round(scale * 100)}%</span>
-            <button
-              onClick={() => setScale(s => Math.min(3, s + 0.25))}
-              className="px-2 py-1 bg-gray-700 rounded hover:bg-gray-600 transition-colors"
-            >
+            <span className="min-w-[50px] text-center font-mono text-xs tabular-nums">{Math.round(scale * 100)}%</span>
+            <button onClick={() => setScale(s => Math.min(3, +(s + 0.25).toFixed(2)))}
+              className="w-8 h-8 flex items-center justify-center bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors font-bold text-lg leading-none">
               +
             </button>
           </div>

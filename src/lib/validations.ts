@@ -1,15 +1,23 @@
 import { z } from 'zod';
+import { t } from './i18n';
 
 export const ACADEMIC_YEARS = [
-  { value: 'grade4_primary',    label: 'الصف الرابع الابتدائي' },
-  { value: 'grade5_primary',    label: 'الصف الخامس الابتدائي' },
-  { value: 'grade6_primary',    label: 'الصف السادس الابتدائي' },
-  { value: 'grade1_prep',       label: 'الصف الأول الإعدادي' },
-  { value: 'grade2_prep',       label: 'الصف الثاني الإعدادي' },
-  { value: 'grade3_prep',       label: 'الصف الثالث الإعدادي' },
-  { value: 'grade1_secondary',  label: 'الصف الأول الثانوي' },
-  { value: 'grade2_secondary',  label: 'الصف الثاني الثانوي' },
+  { value: 'grade4_primary',    label: 'الصف الرابع الابتدائي', labelEn: 'Grade 4 Primary' },
+  { value: 'grade5_primary',    label: 'الصف الخامس الابتدائي', labelEn: 'Grade 5 Primary' },
+  { value: 'grade6_primary',    label: 'الصف السادس الابتدائي', labelEn: 'Grade 6 Primary' },
+  { value: 'grade1_prep',       label: 'الصف الأول الإعدادي',    labelEn: 'Grade 1 Preparatory' },
+  { value: 'grade2_prep',       label: 'الصف الثاني الإعدادي',   labelEn: 'Grade 2 Preparatory' },
+  { value: 'grade3_prep',       label: 'الصف الثالث الإعدادي',   labelEn: 'Grade 3 Preparatory' },
+  { value: 'grade1_secondary',  label: 'الصف الأول الثانوي',     labelEn: 'Grade 1 Secondary' },
+  { value: 'grade2_secondary',  label: 'الصف الثاني الثانوي',    labelEn: 'Grade 2 Secondary' },
 ] as const;
+
+/** Returns the localized label for an academic year value. */
+export function academicYearLabel(value: string): string {
+  const y = ACADEMIC_YEARS.find(x => x.value === value);
+  if (!y) return value;
+  return t(y.label, y.labelEn);
+}
 
 export type AcademicYear = typeof ACADEMIC_YEARS[number]['value'];
 
@@ -122,6 +130,7 @@ export const examSchema = z.object({
   shuffleOptions: z.boolean().default(false),
   showResults: z.boolean().default(true),
   isPreview: z.boolean().default(false),
+  isPublished: z.boolean().default(false),
   questions: z.array(questionSchema),
 });
 

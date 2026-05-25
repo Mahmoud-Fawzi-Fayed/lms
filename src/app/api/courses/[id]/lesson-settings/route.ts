@@ -11,7 +11,8 @@ export const PATCH = withAuth(async (req: NextRequest, user) => {
   const segments = req.nextUrl.pathname.split('/');
   const courseId = segments[segments.indexOf('courses') + 1];
 
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const { moduleIndex, lessonIndex, videoControls } = body;
 
   if (moduleIndex === undefined || lessonIndex === undefined || !videoControls) {
@@ -21,15 +22,20 @@ export const PATCH = withAuth(async (req: NextRequest, user) => {
   const mi = Number(moduleIndex);
   const li = Number(lessonIndex);
 
-  if (isNaN(mi) || isNaN(li)) {
+  if (!Number.isInteger(mi) || !Number.isInteger(li) || mi < 0 || li < 0) {
     return apiError('يجب أن تكون مؤشرات الوحدة والدرس أرقاماً صحيحة', 400);
   }
 
-  // Verify course ownership
-  const course = await Course.findById(courseId).select('instructor');
+  // Verify course ownership AND that the lesson index actually exists — prevents
+  // attackers from inflating the document with a sparse array at index 1e9.
+  const course = await Course.findById(courseId).select('instructor modules.lessons._id');
   if (!course) return apiError('الكورس غير موجود', 404);
   if (course.instructor.toString() !== user.id && user.role !== 'admin') {
     return apiError('غير مصرح', 403);
+  }
+  const moduleDoc = (course as any).modules?.[mi];
+  if (!moduleDoc || !moduleDoc.lessons?.[li]) {
+    return apiError('الوحدة أو الدرس غير موجود', 404);
   }
 
   const allowedControls = ['allowSpeed', 'allowSkip', 'allowFullscreen', 'allowSeek', 'allowVolume', 'forceFocus'];

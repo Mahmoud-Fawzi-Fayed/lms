@@ -14,6 +14,8 @@ export interface IUser extends Document {
   isEmailVerified: boolean;
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
+  suspiciousFlag?: string;
+  suspiciousAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -43,6 +45,8 @@ const userSchema = new Schema<IUser>(
     isEmailVerified: { type: Boolean, default: false },
     resetPasswordToken: { type: String, select: false },
     resetPasswordExpires: { type: Date, select: false },
+    suspiciousFlag: { type: String, default: null },
+    suspiciousAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

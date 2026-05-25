@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
       return apiError('محاولات تسجيل كثيرة جداً. حاول مرة أخرى لاحقاً.', 429);
     }
 
-    const body = await req.json();
+    let body: any;
+    try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
     const parsed = registerSchema.safeParse(body);
 
     if (!parsed.success) {

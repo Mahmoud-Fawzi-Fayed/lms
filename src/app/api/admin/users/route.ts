@@ -1,21 +1,23 @@
 import { NextRequest } from 'next/server';
-import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
+import { withAuth, apiError, apiSuccess, escapeRegex, isValidObjectId } from '@/lib/api-helpers';
 import { User } from '@/models';
 
 // GET /api/admin/users - List all users
 export const GET = withAuth(async (req, user) => {
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get('page') || '1');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
+  const page = Math.max(parseInt(searchParams.get('page') || '1'), 1);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20'), 1), 100);
   const role = searchParams.get('role');
-  const search = searchParams.get('search');
+  const rawSearch = searchParams.get('search');
 
   const filter: any = {};
-  if (role) filter.role = role;
-  if (search) {
+  if (role && ['admin', 'instructor', 'student'].includes(role)) filter.role = role;
+  if (rawSearch) {
+    // Escape regex metachars to prevent NoSQL regex injection / ReDoS, and cap length.
+    const safe = escapeRegex(rawSearch.slice(0, 80));
     filter.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { email: { $regex: search, $options: 'i' } },
+      { name: { $regex: safe, $options: 'i' } },
+      { email: { $regex: safe, $options: 'i' } },
     ];
   }
 
@@ -39,10 +41,16 @@ export const GET = withAuth(async (req, user) => {
 
 // PUT /api/admin/users - Update user (role, active status)
 export const PUT = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const { userId, role, isActive } = body;
 
-  if (!userId) return apiError('معرف المستخدم مطلوب');
+  if (!userId || !isValidObjectId(userId)) return apiError('معرف المستخدم غير صالح');
+
+  // Admin cannot demote / deactivate themselves — keeps at-least-one-admin guarantee.
+  if (userId === user.id && (role !== undefined || isActive === false)) {
+    return apiError('لا يمكنك تعديل صلاحياتك الخاصة', 400);
+  }
 
   const update: any = {};
   if (role && ['admin', 'instructor', 'student'].includes(role)) {
@@ -52,7 +60,14 @@ export const PUT = withAuth(async (req, user) => {
     update.isActive = isActive;
   }
 
-  const updated = await User.findByIdAndUpdate(userId, update, { new: true })
+  if (Object.keys(update).length === 0) {
+    return apiError('لا يوجد بيانات للتحديث', 400);
+  }
+
+  const updated = await User.findByIdAndUpdate(userId, update, {
+    new: true,
+    runValidators: true,
+  })
     .select('-password')
     .lean();
 

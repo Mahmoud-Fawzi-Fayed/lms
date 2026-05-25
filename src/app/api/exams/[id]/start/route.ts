@@ -1,11 +1,21 @@
 import { NextRequest } from 'next/server';
-import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
+import { withAuth, apiError, apiSuccess, rateLimit, isValidObjectId } from '@/lib/api-helpers';
 import { Exam, ExamAttempt, Enrollment, ExamEnrollment } from '@/models';
 import { isSameAcademicYear } from '@/lib/academic-year';
 
 // POST /api/exams/[id]/start - Start an exam attempt
 export const POST = withAuth(async (req, user) => {
   const examId = req.nextUrl.pathname.split('/')[3];
+
+  if (!isValidObjectId(examId)) {
+    return apiError('معرف الاختبار غير صالح', 400);
+  }
+
+  // Defense against concurrent-start races that could exceed maxAttempts and
+  // create multiple in-progress attempts for the same user/exam.
+  if (!rateLimit(`exam-start:${user.id}:${examId}`, 6, 60_000)) {
+    return apiError('طلبات بدء كثيرة. انتظر قليلاً ثم حاول مرة أخرى.', 429);
+  }
 
   const exam = await Exam.findById(examId).lean();
   if (!exam || !exam.isPublished) {
@@ -71,16 +81,30 @@ export const POST = withAuth(async (req, user) => {
       // can call /api/exams/submit with its saved answers (gets graded there).
       // Do NOT pre-mark as timed-out here; submit route will do that.
       return apiSuccess({
-        attempt: inProgress,
+        attempt: stripSnapshot(inProgress),
         exam: sanitizeExamForAttempt(exam),
         timedOut: true,
       });
     }
     // Return existing in-progress attempt
-    return apiSuccess({ attempt: inProgress, exam: sanitizeExamForAttempt(exam) });
+    return apiSuccess({ attempt: stripSnapshot(inProgress), exam: sanitizeExamForAttempt(exam) });
   }
 
-  // Create new attempt
+  // Create new attempt — store a snapshot of the questions WITH correct answers
+  // so submit grades against the exact questions the student was shown, even if the
+  // instructor edits the exam afterward.
+  const snapshot = (exam.questions || []).map((q: any) => ({
+    _id: q._id,
+    type: q.type,
+    text: q.text,
+    points: q.points,
+    order: q.order,
+    correctAnswer: q.correctAnswer,
+    options: Array.isArray(q.options)
+      ? q.options.map((o: any) => ({ _id: o._id, text: o.text, isCorrect: !!o.isCorrect }))
+      : [],
+  }));
+
   const attempt = await ExamAttempt.create({
     user: user.id,
     exam: examId,
@@ -89,13 +113,23 @@ export const POST = withAuth(async (req, user) => {
     startedAt: new Date(),
     status: 'in-progress',
     answers: [],
+    questionSnapshot: snapshot,
   });
 
+  // SECURITY: never return the questionSnapshot — it contains correctAnswer / isCorrect
+  // for every option. Mongoose `select:false` only applies to DB reads; the in-memory
+  // doc returned by .create() still has it, so we must explicitly strip it.
   return apiSuccess({
-    attempt,
+    attempt: stripSnapshot(attempt),
     exam: sanitizeExamForAttempt(exam),
   });
 }, ['student', 'instructor', 'admin']);
+
+function stripSnapshot(attempt: any) {
+  const obj = typeof attempt?.toObject === 'function' ? attempt.toObject() : { ...attempt };
+  delete obj.questionSnapshot;
+  return obj;
+}
 
 function sanitizeExamForAttempt(exam: any) {
   // Normalize legacy type names (old data used "single" for MCQ)

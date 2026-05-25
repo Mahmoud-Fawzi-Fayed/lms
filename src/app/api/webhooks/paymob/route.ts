@@ -12,6 +12,12 @@ export async function POST(req: NextRequest) {
   try {
     await connectDB();
 
+    // Reject non-JSON requests early to prevent body-parsing attacks.
+    const contentType = req.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return jsonError('Content-Type must be application/json', 415);
+    }
+
     const body = await req.json();
     const { obj: transaction, hmac: receivedHmac } = body;
 
@@ -47,7 +53,19 @@ export async function POST(req: NextRequest) {
       return jsonError('الدفع غير موجود', 404);
     }
 
-    // Already processed
+    // Idempotency: if this exact transaction id was already recorded against this
+    // (or any) payment, return early. Prevents replayed webhooks from re-running
+    // the enrollment/grant side-effects, even if status was rolled back.
+    if (
+      transactionId &&
+      payment.paymobTransactionId &&
+      payment.paymobTransactionId === transactionId &&
+      (payment.status === 'paid' || payment.status === 'failed')
+    ) {
+      return NextResponse.json({ message: 'تمت المعالجة مسبقاً (idempotent)' });
+    }
+
+    // Already processed (legacy guard, kept for safety)
     if (payment.status === 'paid') {
       return NextResponse.json({ message: 'تمت المعالجة مسبقاً' });
     }

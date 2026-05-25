@@ -7,6 +7,8 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { formatPrice } from '@/lib/utils';
 import { exportToExcel, exportToPdf } from '@/lib/export-utils';
 import { MiniBarChart, MiniLineChart } from '@/components/analytics/Charts';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const adminLinks = [
   { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
@@ -35,8 +37,8 @@ export default function AdminDashboard() {
       const res = await fetch('/api/admin/stats');
       const data = await res.json();
       if (data.success) setStats(data.data);
-    } catch (error) {
-      console.error('Failed to fetch stats');
+    } catch {
+      toast.error(t('فشل تحميل الإحصائيات', 'Failed to load stats'));
     } finally {
       setLoading(false);
     }

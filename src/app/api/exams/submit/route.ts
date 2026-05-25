@@ -1,11 +1,14 @@
 import { NextRequest } from 'next/server';
+import mongoose from 'mongoose';
 import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
 import { Exam, ExamAttempt } from '@/models';
 import { submitExamSchema } from '@/lib/validations';
+import { gradeAttempt } from '@/lib/exam-grading';
 
 // POST /api/exams/submit - Submit exam answers
 export const POST = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const parsed = submitExamSchema.safeParse(body);
 
   if (!parsed.success) {
@@ -14,8 +17,12 @@ export const POST = withAuth(async (req, user) => {
 
   const { examId, attemptId, answers } = parsed.data;
 
-  // Get the attempt
-  const attempt = await ExamAttempt.findById(attemptId);
+  if (!mongoose.isValidObjectId(attemptId) || !mongoose.isValidObjectId(examId)) {
+    return apiError('معرف غير صالح', 400);
+  }
+
+  // Fetch attempt including the (select:false) snapshot
+  const attempt = await ExamAttempt.findById(attemptId).select('+questionSnapshot');
   if (!attempt) return apiError('محاولة الاختبار غير موجودة', 404);
 
   if (attempt.user.toString() !== user.id) {
@@ -30,72 +37,55 @@ export const POST = withAuth(async (req, user) => {
     return apiError('تم تسليم هذه المحاولة بالفعل', 400);
   }
 
-  // Get the exam with correct answers
-  const exam = await Exam.findById(examId);
-  if (!exam) return apiError('الاختبار غير موجود', 404);
+  // Grade against the snapshot taken at attempt start (immune to instructor edits).
+  // Fall back to live exam questions only for legacy attempts created before snapshots existed.
+  let questions: any[] = (attempt as any).questionSnapshot;
+  let exam: any = null;
+  if (!questions || questions.length === 0) {
+    exam = await Exam.findById(examId);
+    if (!exam) return apiError('الاختبار غير موجود', 404);
+    questions = exam.questions;
+  } else {
+    // Still need exam metadata (duration, passingScore, showResults)
+    exam = await Exam.findById(examId).select('duration passingScore showResults');
+    if (!exam) return apiError('الاختبار غير موجود', 404);
+  }
 
   // Check if timed out
   const elapsed = (Date.now() - attempt.startedAt.getTime()) / 1000 / 60;
   const isTimedOut = elapsed > exam.duration + 1; // 1 minute grace period
 
-  // Grade the answers
-  let totalPoints = 0;
-  let earnedPoints = 0;
-  const gradedAnswers: any[] = [];
+  // Grade via the extracted, unit-tested pure function.
+  const { totalPoints, earnedPoints, gradedAnswers, score, passed } = gradeAttempt(
+    questions as any,
+    answers as any,
+    exam.passingScore
+  );
+  const finalStatus = isTimedOut ? 'timed-out' : 'submitted';
+  const timeSpent = Math.round(elapsed * 60);
 
-  for (const question of exam.questions) {
-    totalPoints += question.points;
-    const userAnswer = answers.find(
-      a => a.questionId === question._id.toString()
-    );
+  // ATOMIC state transition: only set the values if status is still 'in-progress'.
+  // Prevents double-submission / replay scoring inflation.
+  const updated = await ExamAttempt.findOneAndUpdate(
+    { _id: attempt._id, status: 'in-progress' },
+    {
+      $set: {
+        answers: gradedAnswers,
+        score,
+        totalPoints,
+        earnedPoints,
+        passed,
+        submittedAt: new Date(),
+        timeSpent,
+        status: finalStatus,
+      },
+    },
+    { new: true }
+  );
 
-    let isCorrect = false;
-
-    if (userAnswer) {
-      switch (question.type) {
-        case 'mcq':
-        case 'single':
-        case 'truefalse': {
-          const selectedOpt = (question.options as any[])?.find(
-            (o: any) => o._id?.toString() === userAnswer.selectedOption ||
-                 o.text === userAnswer.selectedOption
-          );
-          isCorrect = selectedOpt?.isCorrect || false;
-          break;
-        }
-        case 'fillinblank': {
-          isCorrect =
-            userAnswer.answer?.trim().toLowerCase() ===
-            question.correctAnswer?.trim().toLowerCase();
-          break;
-        }
-      }
-    }
-
-    if (isCorrect) earnedPoints += question.points;
-
-    gradedAnswers.push({
-      question: question._id,
-      selectedOption: userAnswer?.selectedOption,
-      answer: userAnswer?.answer,
-      isCorrect,
-      points: isCorrect ? question.points : 0,
-    });
+  if (!updated) {
+    return apiError('تم تسليم هذه المحاولة بالفعل', 409);
   }
-
-  const score = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-  const passed = score >= exam.passingScore;
-
-  // Update attempt
-  attempt.answers = gradedAnswers;
-  attempt.score = score;
-  attempt.totalPoints = totalPoints;
-  attempt.earnedPoints = earnedPoints;
-  attempt.passed = passed;
-  attempt.submittedAt = new Date();
-  attempt.timeSpent = Math.round(elapsed * 60);
-  attempt.status = isTimedOut ? 'timed-out' : 'submitted';
-  await attempt.save();
 
   // Build response
   const result: any = {
@@ -103,22 +93,23 @@ export const POST = withAuth(async (req, user) => {
     passed,
     earnedPoints,
     totalPoints,
-    timeSpent: attempt.timeSpent,
-    status: attempt.status,
+    timeSpent,
+    status: finalStatus,
   };
 
   // Include correct answers if showResults is enabled
   if (exam.showResults) {
     result.details = gradedAnswers.map((a, i) => ({
-      question: exam.questions[i].text,
+      question: questions[i].text,
       isCorrect: a.isCorrect,
-      explanation: exam.questions[i].explanation,
+      explanation: questions[i].explanation,
       correctAnswer:
-        exam.questions[i].type === 'fillinblank'
-          ? exam.questions[i].correctAnswer
-          : exam.questions[i].options?.find((o: any) => o.isCorrect)?.text,
+        questions[i].type === 'fillinblank'
+          ? questions[i].correctAnswer
+          : questions[i].options?.find((o: any) => o.isCorrect)?.text,
     }));
   }
 
   return apiSuccess(result);
 }, ['student', 'instructor', 'admin']);
+

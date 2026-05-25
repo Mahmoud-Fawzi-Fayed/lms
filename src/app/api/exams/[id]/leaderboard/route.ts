@@ -18,7 +18,8 @@ export async function GET(
     }
 
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100);
+    const rawLimit = parseInt(searchParams.get('limit') || '50');
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 50, 1), 100);
 
     if (!mongoose.Types.ObjectId.isValid(params.id)) {
       return apiError('معرف الاختبار غير صالح', 400);
@@ -97,6 +98,7 @@ export async function GET(
 
     return apiSuccess({ leaderboard: ranked });
   } catch (error: any) {
-    return apiError(error.message, 500);
+    console.error('leaderboard error:', error);
+    return apiError('فشل تحميل قائمة المتفوقين', 500);
   }
 }

@@ -21,14 +21,31 @@ export const GET = withAuth(async (req, user) => {
 
 // PUT /api/users/me - Update profile
 export const PUT = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
 
-  const allowedFields = ['name', 'phone', 'avatar'];
   const update: any = {};
-  for (const field of allowedFields) {
-    if (body[field] !== undefined) {
-      update[field] = body[field];
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (name.length < 2 || name.length > 100) {
+      return apiError('الاسم يجب أن يكون بين 2 و 100 حرف', 400);
     }
+    update.name = name;
+  }
+  if (body.phone !== undefined) {
+    const phone = String(body.phone).trim();
+    if (phone && !/^[+0-9 \-()]{6,20}$/.test(phone)) {
+      return apiError('رقم الهاتف غير صالح', 400);
+    }
+    update.phone = phone || undefined;
+  }
+  if (body.avatar !== undefined) {
+    const avatar = String(body.avatar).trim();
+    // Reject javascript:/data:/vbscript: URLs and anything over 500 chars.
+    if (avatar && (avatar.length > 500 || !/^(https?:\/\/|\/)/i.test(avatar))) {
+      return apiError('رابط الصورة غير صالح', 400);
+    }
+    update.avatar = avatar || undefined;
   }
 
   // If changing password
@@ -39,15 +56,27 @@ export const PUT = withAuth(async (req, user) => {
     const isValid = await fullUser.comparePassword(body.currentPassword);
     if (!isValid) return apiError('كلمة المرور الحالية غير صحيحة', 400);
 
-    if (body.newPassword.length < 8) {
-      return apiError('كلمة المرور الجديدة يجب أن تكون 8 أحرف على الأقل', 400);
+    const newPw = String(body.newPassword);
+    if (newPw.length < 8 || newPw.length > 128) {
+      return apiError('كلمة المرور الجديدة يجب أن تكون بين 8 و 128 حرفاً', 400);
+    }
+    // Require at least one letter and one digit — basic complexity baseline.
+    if (!/[A-Za-z]/.test(newPw) || !/\d/.test(newPw)) {
+      return apiError('كلمة المرور يجب أن تحتوي على حرف ورقم على الأقل', 400);
+    }
+    if (newPw === body.currentPassword) {
+      return apiError('كلمة المرور الجديدة يجب أن تختلف عن الحالية', 400);
     }
 
-    fullUser.password = body.newPassword;
+    fullUser.password = newPw;
     Object.assign(fullUser, update);
     await fullUser.save();
 
     return apiSuccess({ message: 'تم تحديث الملف الشخصي' });
+  }
+
+  if (Object.keys(update).length === 0) {
+    return apiError('لا يوجد بيانات للتحديث', 400);
   }
 
   await User.findByIdAndUpdate(user.id, update, { runValidators: true });

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import ContentProtection from '@/components/ContentProtection';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const draftKey = (attemptId: string) => `exam_draft_${attemptId}`;
 
@@ -25,6 +26,7 @@ export default function TakeExamPage() {
 
   // Stable refs — prevent stale closures in timer/event callbacks
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSubmitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submittingRef = useRef(false);
   const answersRef = useRef<Record<string, { selectedOption?: string; answer?: string }>>({});
   const examRef = useRef<any>(null);
@@ -43,7 +45,12 @@ export default function TakeExamPage() {
 
   useEffect(() => {
     startExam();
-    return () => stopTimer();
+    return () => {
+      stopTimer();
+      if (autoSubmitTimeoutRef.current) {
+        clearTimeout(autoSubmitTimeoutRef.current);
+      }
+    };
   }, [id]);
 
   // Correct timer drift when user switches back to the tab
@@ -113,7 +120,7 @@ export default function TakeExamPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'فشل بدء الاختبار');
+        toast.error(data.error || t('فشل بدء الاختبار', 'Failed to start exam'));
         router.back();
         return;
       }
@@ -137,14 +144,14 @@ export default function TakeExamPage() {
           const parsed = JSON.parse(saved);
           setAnswers(parsed);
           answersRef.current = parsed;
-          toast('تم استعادة إجاباتك السابقة', { icon: 'ℹ️', duration: 3000 });
+          toast(t('تم استعادة إجاباتك السابقة', 'Previous answers restored'), { icon: 'ℹ️', duration: 3000 });
         }
       } catch { /* ignore invalid localStorage data */ }
 
       if (serverTimedOut) {
         // Server says time already ran out — submit what we have immediately
         setTimeLeft(0);
-        setTimeout(doAutoSubmit, 100);
+        autoSubmitTimeoutRef.current = setTimeout(doAutoSubmit, 100);
       } else {
         const remaining = calcRemaining();
         setTimeLeft(remaining);
@@ -155,7 +162,7 @@ export default function TakeExamPage() {
         }
       }
     } catch {
-      toast.error('فشل بدء الاختبار');
+      toast.error(t('فشل بدء الاختبار', 'Failed to start exam'));
     } finally {
       setLoading(false);
     }
@@ -211,14 +218,14 @@ export default function TakeExamPage() {
       if (data.success) {
         localStorage.removeItem(draftKey(currentAttempt._id));
         setResult(data.data);
-        toast.success(timedOut ? 'انتهى الوقت! تم تسليم الاختبار تلقائياً.' : 'تم تسليم الاختبار!');
+        toast.success(timedOut ? t('انتهى الوقت! تم تسليم الاختبار تلقائياً.', 'Time\'s up! Exam auto-submitted.') : t('تم تسليم الاختبار!', 'Exam submitted!'));
       } else {
-        toast.error(data.error || 'فشل التسليم');
+        toast.error(data.error || t('فشل التسليم', 'Submission failed'));
         submittingRef.current = false;
         setSubmitting(false);
       }
     } catch {
-      toast.error('فشل تسليم الاختبار');
+      toast.error(t('فشل تسليم الاختبار', 'Exam submission failed'));
       submittingRef.current = false;
       setSubmitting(false);
     }

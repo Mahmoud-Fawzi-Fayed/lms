@@ -27,10 +27,16 @@ export async function GET(req: NextRequest) {
     if (user?.role === 'student') {
       const normalizedYear = normalizeAcademicYear(user.academicYear);
       if (!normalizedYear) {
-        baseFilter._id = null;
-      } else {
-        baseFilter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
+        // Student has no academic year set — surface this to the UI instead of silently
+        // returning an empty list with no explanation.
+        return apiSuccess({
+          courses: [],
+          filters: { categories: [], levels: [] },
+          pagination: { page, limit, total: 0, pages: 0 },
+          requiresAcademicYear: true,
+        });
       }
+      baseFilter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
     }
 
     if (search) {
@@ -87,13 +93,14 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    return apiError(error.message, 500);
+    console.error("API error:", error); return apiError("Internal server error", 500);
   }
 }
 
 // POST /api/courses - Create course (instructor/admin only)
 export const POST = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const parsed = courseSchema.safeParse(body);
 
   if (!parsed.success) {

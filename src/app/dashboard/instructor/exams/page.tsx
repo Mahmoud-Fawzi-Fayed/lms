@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
 import { ACADEMIC_YEARS } from '@/lib/validations';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const instructorLinks = [
   { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
@@ -73,8 +75,8 @@ export default function InstructorExamsPage() {
       const statsData = await statsRes.json();
       if (examsData.success) setExams(examsData.data.exams || []);
       if (statsData.success) setCourses(statsData.data.courses || []);
-    } catch (error) {
-      console.error('Failed to fetch data');
+    } catch {
+      toast.error(t('فشل تحميل البيانات', 'Failed to load data'));
     } finally {
       setLoading(false);
     }
@@ -237,10 +239,10 @@ export default function InstructorExamsPage() {
         });
         fetchData();
       } else {
-        alert(data.error || (editingExamId ? 'فشل تحديث الاختبار' : 'فشل إنشاء الاختبار'));
+        toast.error(data.error || (editingExamId ? t('فشل تحديث الاختبار', 'Update failed') : t('فشل إنشاء الاختبار', 'Create failed')));
       }
     } catch {
-      alert('حدث خطأ ما');
+      toast.error(t('خطأ في الحفظ', 'Save error'));
     } finally {
       setSaving(false);
     }
@@ -249,10 +251,13 @@ export default function InstructorExamsPage() {
   const deleteExam = async (examId: string) => {
     if (!confirm('حذف هذا الاختبار؟')) return;
     try {
-      await fetch(`/api/exams/${examId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/exams/${examId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) { toast.error(data.error || t('فشل الحذف', 'Delete failed')); return; }
+      toast.success(t('تم حذف الاختبار', 'Exam deleted'));
       fetchData();
     } catch {
-      console.error('Failed to delete');
+      toast.error(t('خطأ في الحذف', 'Delete error'));
     }
   };
 
@@ -266,7 +271,7 @@ export default function InstructorExamsPage() {
       const res = await fetch(`/api/exams/${exam._id}`, { cache: 'no-store' });
       const data = await res.json();
       if (!data.success) {
-        alert('فشل تحميل بيانات الاختبار');
+        toast.error(t('فشل تحميل بيانات الاختبار', 'Failed to load exam'));
         return;
       }
       const e = data.data.exam;
@@ -307,7 +312,7 @@ export default function InstructorExamsPage() {
       setEditingExamId(exam._id);
       setShowCreate(true);
     } catch {
-      alert('حدث خطأ ما');
+      toast.error(t('حدث خطأ ما', 'An error occurred'));
     }
   };
 

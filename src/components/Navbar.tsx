@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useLang } from '@/contexts/LanguageContext';
+import { t } from '@/lib/i18n';
 
 export default function Navbar() {
   const { data: session } = useSession();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const pathname = usePathname();
+  const { lang, setLang } = useLang();
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -17,9 +20,9 @@ export default function Navbar() {
   }, [pathname]);
 
   const navLinks = [
-    { href: '/', label: 'الرئيسية' },
-    { href: '/courses', label: 'الكورسات' },
-    { href: '/exams', label: 'الامتحانات' },
+    { href: '/', label: t('الرئيسية', 'Home') },
+    { href: '/courses', label: t('الكورسات', 'Courses') },
+    { href: '/exams', label: t('الامتحانات', 'Exams') },
   ];
 
   const getDashboardLink = () => {
@@ -46,7 +49,7 @@ export default function Navbar() {
               </svg>
             </div>
             <span className="font-bold text-base text-accent-800 hidden sm:inline">
-              أ/<span className="text-primary-500"> محمد الصباغ</span>
+              {t('أ/', 'Mr.')}<span className="text-primary-500">{t(' محمد الصباغ', ' Mohamed Elsabbagh')}</span>
             </span>
           </Link>
 
@@ -69,13 +72,21 @@ export default function Navbar() {
 
           {/* Auth Buttons */}
           <div className="hidden md:flex items-center gap-3">
+            {/* Language Toggle */}
+            <button
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+              className="px-2.5 py-1 text-xs font-bold rounded-lg border border-accent-200 text-accent-600 hover:border-primary-400 hover:text-primary-600 transition-colors"
+              title={lang === 'ar' ? 'Switch to English' : 'التبديل للعربية'}
+            >
+              {lang === 'ar' ? 'EN' : 'ع'}
+            </button>
             {session ? (
               <div className="flex items-center gap-3">
                 <Link
                   href={getDashboardLink()}
                   className="text-sm font-medium text-accent-600 hover:text-primary-600 transition-colors"
                 >
-                  لوحة التحكم
+                  {t('لوحة التحكم', 'Dashboard')}
                 </Link>
                 <div className="relative">
                   <button
@@ -97,14 +108,14 @@ export default function Navbar() {
                         className="block px-4 py-2.5 text-sm font-medium text-accent-700 hover:bg-accent-50"
                         onClick={() => setProfileMenuOpen(false)}
                       >
-                        📊 لوحة التحكم
+                        📊 {t('لوحة التحكم', 'Dashboard')}
                       </Link>
                       <Link
                         href="/dashboard/student/profile"
                         className="block px-4 py-2.5 text-sm font-medium text-accent-700 hover:bg-accent-50"
                         onClick={() => setProfileMenuOpen(false)}
                       >
-                        👤 الملف الشخصي
+                        👤 {t('الملف الشخصي', 'Profile')}
                       </Link>
                       <hr className="my-1 border-accent-100" />
                       <button
@@ -114,7 +125,7 @@ export default function Navbar() {
                         }}
                         className="block w-full text-right px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
                       >
-                        🚪 تسجيل الخروج
+                        🚪 {t('تسجيل الخروج', 'Sign Out')}
                       </button>
                     </div>
                   )}
@@ -126,13 +137,13 @@ export default function Navbar() {
                   href="/login"
                   className="text-sm font-medium text-accent-600 hover:text-primary-600 transition-colors"
                 >
-                  دخول
+                  {t('دخول', 'Sign In')}
                 </Link>
                 <Link
                   href="/register"
                   className="px-5 py-2 bg-primary-500 text-white text-sm font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-soft"
                 >
-                  اشترك الآن
+                  {t('اشترك الآن', 'Sign Up Now')}
                 </Link>
               </>
             )}
@@ -142,7 +153,7 @@ export default function Navbar() {
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="md:hidden p-2 rounded-lg hover:bg-accent-50 transition-colors flex-shrink-0"
-            aria-label="فتح القائمة"
+            aria-label={t('فتح القائمة', 'Open menu')}
           >
             <svg className="w-6 h-6 text-accent-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {mobileMenuOpen ? (
@@ -178,7 +189,7 @@ export default function Navbar() {
                     className="block rounded-lg px-3 py-2 text-sm font-medium text-primary-600 bg-white border border-primary-100"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    لوحة التحكم
+                    {t('لوحة التحكم', 'Dashboard')}
                   </Link>
                   <button
                     onClick={() => {
@@ -187,16 +198,22 @@ export default function Navbar() {
                     }}
                     className="block w-full text-right rounded-lg px-3 py-2 text-sm font-medium text-red-600 bg-white border border-red-100"
                   >
-                    تسجيل الخروج
+                    {t('تسجيل الخروج', 'Sign Out')}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col gap-2 mt-4">
-                <Link href="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50">دخول</Link>
-                <Link href="/register" className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-primary-600">اشترك</Link>
+                <Link href="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50">{t('دخول', 'Sign In')}</Link>
+                <Link href="/register" className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-primary-600">{t('اشترك', 'Sign Up')}</Link>
               </div>
             )}
+            <button
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+              className="mt-3 w-full text-center rounded-lg px-3 py-2 text-sm font-medium text-accent-600 border border-accent-200 hover:border-primary-400 hover:text-primary-600"
+            >
+              {lang === 'ar' ? '🌐 Switch to English' : '🌐 التبديل للعربية'}
+            </button>
           </div>
         )}
       </div>

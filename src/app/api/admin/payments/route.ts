@@ -11,33 +11,15 @@ export const GET = withAuth(async (req) => {
   const courseId = searchParams.get('courseId');
   const userId = searchParams.get('userId');
 
-  const filter: Record<string, any> = {
-    method: { $in: ['card', 'wallet', 'fawry'] },
-  };
+  // No default method filter — show all methods including 'free' so admin can
+  // audit free enrollments alongside paid ones.
+  const filter: Record<string, any> = {};
   if (status) filter.status = status;
-  if (method && ['card', 'wallet', 'fawry'].includes(method)) {
+  if (method && ['card', 'wallet', 'fawry', 'free'].includes(method)) {
     filter.method = method;
   }
   if (courseId) filter.course = courseId;
   if (userId) filter.user = userId;
-
-  // Auto-expire stale pending online payments (card/wallet) when webhook is missing.
-  // Fawry can remain pending for longer, so it is excluded.
-  const staleCutoff = new Date(Date.now() - 10 * 60 * 1000);
-  await Payment.updateMany(
-    {
-      status: 'pending',
-      method: { $in: ['card', 'wallet'] },
-      createdAt: { $lt: staleCutoff },
-    },
-    {
-      $set: {
-        status: 'failed',
-        'metadata.reconciliation': 'auto_expired_pending',
-        'metadata.expiredAt': new Date().toISOString(),
-      },
-    }
-  );
 
   const skip = (page - 1) * limit;
 

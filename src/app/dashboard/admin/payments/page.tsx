@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import { formatPrice } from '@/lib/utils';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const adminLinks = [
   { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
@@ -36,8 +38,8 @@ export default function AdminPaymentsPage() {
       const res = await fetch(`/api/admin/payments?${params.toString()}`);
       const data = await res.json();
       if (data.success) setPayments(data.data.payments || []);
-    } catch (error) {
-      console.error('Failed to fetch payments');
+    } catch {
+      toast.error(t('فشل تحميل المدفوعات', 'Failed to load payments'));
     } finally {
       setLoading(false);
     }

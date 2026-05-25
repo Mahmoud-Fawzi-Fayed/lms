@@ -7,6 +7,7 @@ import ContentProtection from '@/components/ContentProtection';
 import SecureVideoPlayer from '@/components/SecureVideoPlayer';
 import SecurePdfViewer from '@/components/SecurePdfViewer';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 export default function CourseLearnPage() {
   const { id } = useParams();
@@ -40,7 +41,7 @@ export default function CourseLearnPage() {
       const data = await res.json();
 
       if (!data.success || !data.data.isEnrolled) {
-        toast.error('يجب أن تكون مسجلاً للوصول لهذا الكورس');
+        toast.error(t('يجب أن تكون مسجلاً للوصول لهذا الكورس', 'You must be enrolled to access this course'));
         router.push(`/courses`);
         return;
       }
@@ -55,8 +56,9 @@ export default function CourseLearnPage() {
 
       // Set first lesson as active
       if (data.data.course.modules?.[0]?.lessons?.[0]) {
-        setActiveLesson(data.data.course.modules[0].lessons[0]);
-        loadContent(data.data.course._id, data.data.course.modules[0].lessons[0]._id);
+        const firstLesson = data.data.course.modules[0].lessons[0];
+        setActiveLesson(firstLesson);
+        loadContent(data.data.course._id, firstLesson._id, firstLesson.type);
       }
 
       // Fetch exam for this course
@@ -68,22 +70,25 @@ export default function CourseLearnPage() {
         }
       } catch { /* no exam */ }
     } catch (error) {
-      toast.error('فشل تحميل الكورس');
+      toast.error(t('فشل تحميل الكورس', 'Failed to load course'));
     } finally {
       setLoading(false);
     }
   };
 
-  const loadContent = async (courseId: string, lessonId: string) => {
+  const loadContent = async (courseId: string, lessonId: string, lessonType?: string) => {
     try {
-      // Get content token from API
-      const res = await fetch(`/api/courses/${courseId}/content-token?lessonId=${lessonId}`);
+      const kind = lessonType === 'video' ? 'stream' : 'raw';
+      const res = await fetch(`/api/courses/${courseId}/content-token?lessonId=${lessonId}&kind=${kind}`);
       const data = await res.json();
       if (data.success && data.data.token) {
-        setContentUrl(`/api/content/${data.data.token}?mode=raw`);
+        // Videos use mode=stream (browser-native range streaming, no blob download).
+        // PDFs/text use mode=raw (requires X-Content-Request header from JS fetch).
+        const mode = lessonType === 'video' ? 'stream' : 'raw';
+        setContentUrl(`/api/content/${data.data.token}?mode=${mode}`);
       }
-    } catch (error) {
-      console.error('Failed to load content URL');
+    } catch {
+      toast.error(t('تعذر تحميل المحتوى', 'Content failed to load'));
     }
   };
 
@@ -92,39 +97,44 @@ export default function CourseLearnPage() {
     setActiveModuleIndex(moduleIdx);
     setActiveLessonIndex(lessonIdx);
     setActiveLesson(lesson);
-    loadContent(course._id, lesson._id);
+    loadContent(course._id, lesson._id, lesson.type);
   };
 
   const markComplete = async () => {
     if (!activeLesson || completedLessons.includes(activeLesson._id)) return;
 
+    // Capture indices synchronously before any await to avoid stale-closure
+    // bugs if the user navigates to a different lesson mid-flight.
+    const capturedModIdx = activeModuleIndex;
+    const capturedLesIdx = activeLessonIndex;
+    const capturedIsLast = course
+      ? capturedModIdx === course.modules.length - 1 &&
+        capturedLesIdx === course.modules[capturedModIdx]?.lessons.length - 1
+      : false;
+
     try {
       const res = await fetch('/api/enrollments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          courseId: course._id,
-          lessonId: activeLesson._id,
-        }),
+        body: JSON.stringify({ courseId: course._id, lessonId: activeLesson._id }),
       });
       const data = await res.json();
       if (data.success) {
         setCompletedLessons(prev => [...prev, activeLesson._id]);
         setProgress(data.data.progress.percentage);
-        toast.success('تم إكمال الدرس!');
-
-        if (isLastLesson) {
+        toast.success(t('تم إكمال الدرس!', 'Lesson completed!'));
+        if (capturedIsLast) {
           if (courseExam) {
-            toast.success('اكتمل الكورس! جاري تحويلك للاختبار...');
+            toast.success(t('اكتمل الكورس! جاري تحويلك للاختبار...', 'Course complete! Redirecting to exam...'));
             setTimeout(() => router.push(`/exams/take/${courseExam._id}`), 700);
           } else {
-            toast.success('مبروك! اكتملت كل دروس الكورس');
+            toast.success(t('مبروك! اكتملت كل دروس الكورس', 'Congrats! All lessons completed'));
             setTimeout(() => router.push('/dashboard/student/courses'), 700);
           }
         }
       }
-    } catch (error) {
-      console.error('Failed to mark complete');
+    } catch {
+      toast.error(t('تعذر تسجيل إكمال الدرس', 'Could not mark lesson complete'));
     }
   };
 

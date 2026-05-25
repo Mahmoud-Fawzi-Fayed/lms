@@ -99,13 +99,14 @@ export async function GET(req: NextRequest) {
 
     return apiSuccess({ exams });
   } catch (error: any) {
-    return apiError(error.message, 500);
+    console.error("API error:", error); return apiError("Internal server error", 500);
   }
 }
 
 // POST /api/exams - Create exam (instructor/admin)
 export const POST = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const parsed = examSchema.safeParse(body);
 
   if (!parsed.success) {

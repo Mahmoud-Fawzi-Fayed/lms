@@ -5,15 +5,13 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
-
-const studentLinks = [
-  { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/student/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/student/exams', label: 'اختباراتي', icon: '📝' },
-  { href: '/dashboard/student/profile', label: 'الملف الشخصي', icon: '👤' },
-];
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
+import { studentLinks } from '@/lib/nav-links';
 
 export default function StudentDashboard() {
+  useLang();
   const { data: session, status } = useSession();
   const router = useRouter();
   const [data, setData] = useState<any>(null);
@@ -40,8 +38,8 @@ export default function StudentDashboard() {
         enrollments: enrollData.success ? (enrollData.data.enrollments || []) : [],
         user: userData.success ? userData.data : null,
       });
-    } catch (error) {
-      console.error('Failed to fetch data');
+    } catch {
+      toast.error(t('فشل تحميل البيانات', 'Failed to load data'));
     } finally {
       setLoading(false);
     }
@@ -50,12 +48,12 @@ export default function StudentDashboard() {
   const activeEnrollments = data?.enrollments?.filter((e: any) => e.status === 'active') || [];
 
   return (
-    <DashboardSidebar links={studentLinks}>
+    <DashboardSidebar links={studentLinks()}>
       <div className="p-8">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
-          مرحباً بك{data?.user?.name ? `، ${data.user.name}` : ''} 👋
+          {t('مرحباً بك', 'Welcome')}{data?.user?.name ? `, ${data.user.name}` : ''} 👋
         </h1>
-        <p className="text-slate-500 mb-8">أكمل رحلة التعلم</p>
+        <p className="text-slate-500 mb-8">{t('أكمل رحلة التعلم', 'Continue your learning journey')}</p>
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -72,14 +70,14 @@ export default function StudentDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-slate-600">الكورسات المسجلة</span>
+                  <span className="text-sm font-medium text-slate-600">{t('الكورسات المسجلة', 'Enrolled Courses')}</span>
                   <span className="text-2xl">📚</span>
                 </div>
                 <div className="text-2xl font-bold text-slate-900">{activeEnrollments.length}</div>
               </div>
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-slate-600">متوسط التقدم</span>
+                  <span className="text-sm font-medium text-slate-600">{t('متوسط التقدم', 'Average Progress')}</span>
                   <span className="text-2xl">📈</span>
                 </div>
                 <div className="text-2xl font-bold text-slate-900">
@@ -93,7 +91,7 @@ export default function StudentDashboard() {
               </div>
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm font-medium text-slate-600">مكتمل</span>
+                  <span className="text-sm font-medium text-slate-600">{t('مكتمل', 'Completed')}</span>
                   <span className="text-2xl">🏆</span>
                 </div>
                 <div className="text-2xl font-bold text-slate-900">
@@ -104,7 +102,7 @@ export default function StudentDashboard() {
 
             {/* Continue Learning */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-8">
-              <h2 className="font-semibold text-slate-900 mb-4">أكمل التعلم</h2>
+              <h2 className="font-semibold text-slate-900 mb-4">{t('أكمل التعلم', 'Continue Learning')}</h2>
               {activeEnrollments.length > 0 ? (
                 <div className="space-y-3">
                   {activeEnrollments.slice(0, 5).map((enrollment: any) => (
@@ -116,13 +114,13 @@ export default function StudentDashboard() {
                       <div className="flex-1">
                         <div className="font-medium text-slate-900">{enrollment.course?.title}</div>
                         <div className="text-sm text-slate-500 mt-1">
-                          {enrollment.course?.instructor?.name || 'محاضر غير معروف'}
+                          {enrollment.course?.instructor?.name || t('محاضر غير معروف', 'Unknown instructor')}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="w-32">
                           <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                            <span>التقدم</span>
+                            <span>{t('التقدم', 'Progress')}</span>
                             <span>{enrollment.progress?.percentage || 0}%</span>
                           </div>
                           <div className="w-full bg-slate-200 rounded-full h-2">
@@ -139,12 +137,12 @@ export default function StudentDashboard() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-slate-500 mb-4">لا توجد كورسات بعد</p>
+                  <p className="text-slate-500 mb-4">{t('لا توجد كورسات بعد', 'No courses yet')}</p>
                   <Link
                     href="/courses"
                     className="inline-flex px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
                   >
-                    تصفح الكورسات
+                    {t('تصفح الكورسات', 'Browse Courses')}
                   </Link>
                 </div>
               )}
@@ -157,16 +155,16 @@ export default function StudentDashboard() {
                 className="bg-gradient-to-l from-blue-500 to-blue-600 rounded-2xl p-6 text-white hover:shadow-lg transition-shadow"
               >
                 <span className="text-3xl mb-2 block">🔍</span>
-                <h3 className="font-semibold text-lg">تصفح الكورسات</h3>
-                <p className="text-blue-100 text-sm mt-1">اكتشف كورسات جديدة للتعلم</p>
+                <h3 className="font-semibold text-lg">{t('تصفح الكورسات', 'Browse Courses')}</h3>
+                <p className="text-blue-100 text-sm mt-1">{t('اكتشف كورسات جديدة للتعلم', 'Discover new courses to learn')}</p>
               </Link>
               <Link
                 href="/dashboard/student/exams"
                 className="bg-gradient-to-l from-purple-500 to-purple-600 rounded-2xl p-6 text-white hover:shadow-lg transition-shadow"
               >
                 <span className="text-3xl mb-2 block">📝</span>
-                <h3 className="font-semibold text-lg">اختباراتي</h3>
-                <p className="text-purple-100 text-sm mt-1">شاهد نتائج اختباراتك ودرجاتك</p>
+                <h3 className="font-semibold text-lg">{t('اختباراتي', 'My Exams')}</h3>
+                <p className="text-purple-100 text-sm mt-1">{t('شاهد نتائج اختباراتك ودرجاتك', 'View your exam results and scores')}</p>
               </Link>
             </div>
           </>

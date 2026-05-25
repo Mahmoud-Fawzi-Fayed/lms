@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const studentLinks = [
   { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
@@ -36,8 +38,8 @@ export default function StudentProfilePage() {
         setUser(data.data);
         setForm({ name: data.data.name, phone: data.data.phone || '' });
       }
-    } catch (error) {
-      console.error('Failed to fetch profile');
+    } catch {
+      toast.error(t('فشل تحميل الملف الشخصي', 'Failed to load profile'));
     } finally {
       setLoading(false);
     }

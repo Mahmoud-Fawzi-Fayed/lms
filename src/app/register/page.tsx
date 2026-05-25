@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { signIn } from 'next-auth/react';
-import { ACADEMIC_YEARS } from '@/lib/validations';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
+import { ACADEMIC_YEARS, academicYearLabel } from '@/lib/validations';
 
 export default function RegisterPage() {
+  useLang();
   const router = useRouter();
   const [step, setStep] = useState<'year' | 'form'>('year');
   const [selectedYear, setSelectedYear] = useState('');
@@ -25,12 +28,12 @@ export default function RegisterPage() {
     e.preventDefault();
 
     if (formData.password !== formData.confirmPassword) {
-      toast.error('كلمات المرور غير متطابقة');
+      toast.error(t('كلمات المرور غير متطابقة', 'Passwords do not match'));
       return;
     }
 
     if (formData.password.length < 8) {
-      toast.error('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
+      toast.error(t('كلمة المرور يجب أن تكون 8 أحرف على الأقل', 'Password must be at least 8 characters'));
       return;
     }
 
@@ -52,11 +55,11 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'فشل إنشاء الحساب');
+        toast.error(data.error || t('فشل إنشاء الحساب', 'Account creation failed'));
         return;
       }
 
-      toast.success('تم إنشاء الحساب! جاري تسجيل الدخول...');
+      toast.success(t('تم إنشاء الحساب! جاري تسجيل الدخول...', 'Account created! Signing you in...'));
 
       const signInResult = await signIn('credentials', {
         email: formData.email,
@@ -71,16 +74,15 @@ export default function RegisterPage() {
         router.push('/login');
       }
     } catch (error) {
-      toast.error('حدث خطأ. حاول مرة أخرى.');
+      toast.error(t('حدث خطأ. حاول مرة أخرى.', 'An error occurred. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
-  // Step colours per grade group
   const yearGroups = [
     {
-      group: 'الابتدائي',
+      group: t('الابتدائي', 'Primary'),
       color: 'from-emerald-500 to-teal-500',
       bg: 'bg-emerald-50',
       border: 'border-emerald-200',
@@ -89,7 +91,7 @@ export default function RegisterPage() {
       years: ACADEMIC_YEARS.filter(y => y.value.includes('primary')),
     },
     {
-      group: 'الإعدادي',
+      group: t('الإعدادي', 'Preparatory'),
       color: 'from-blue-500 to-indigo-500',
       bg: 'bg-blue-50',
       border: 'border-blue-200',
@@ -98,7 +100,7 @@ export default function RegisterPage() {
       years: ACADEMIC_YEARS.filter(y => y.value.includes('prep')),
     },
     {
-      group: 'الثانوي',
+      group: t('الثانوي', 'Secondary'),
       color: 'from-violet-500 to-purple-500',
       bg: 'bg-violet-50',
       border: 'border-violet-200',
@@ -110,7 +112,6 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-accent-50 to-primary-50 flex flex-col items-center justify-center p-4">
-      {/* Logo */}
       <Link href="/" className="flex items-center gap-2.5 mb-10">
         <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-soft">
           <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-white">
@@ -118,15 +119,18 @@ export default function RegisterPage() {
           </svg>
         </div>
         <span className="font-bold text-base text-accent-800">
-          أ/<span className="text-primary-500"> محمد الصباغ</span>
+          {t('أ/', 'Mr.')}<span className="text-primary-500"> {t('محمد الصباغ', 'Mohamed Elsabbagh')}</span>
         </span>
       </Link>
 
-      {/* ── Step 1: Choose grade year ── */}
       {step === 'year' && (
         <div className="w-full max-w-2xl bg-white rounded-xl shadow-soft border border-accent-200 p-8">
-          <h1 className="text-3xl font-bold text-accent-900 mb-2 text-center">اختر سنتك الدراسية</h1>
-          <p className="text-accent-600 text-center mb-10 text-lg">ستظهر لك الكورسات المناسبة لمستواك</p>
+          <h1 className="text-3xl font-bold text-accent-900 mb-2 text-center">
+            {t('اختر سنتك الدراسية', 'Choose your academic year')}
+          </h1>
+          <p className="text-accent-600 text-center mb-10 text-lg">
+            {t('ستظهر لك الكورسات المناسبة لمستواك', 'Courses matching your level will be shown')}
+          </p>
 
           <div className="space-y-6">
             {yearGroups.map(({ group, color, bg, border, ring, text, years }) => (
@@ -154,7 +158,7 @@ export default function RegisterPage() {
                           </svg>
                         </span>
                       )}
-                      {y.label}
+                      {academicYearLabel(y.value)}
                     </button>
                   ))}
                 </div>
@@ -168,20 +172,20 @@ export default function RegisterPage() {
             onClick={() => setStep('form')}
             className="w-full mt-10 py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-soft"
           >
-            التالي → إنشاء الحساب
+            {t('التالي → إنشاء الحساب', 'Next → Create account')}
           </button>
 
           <p className="text-center text-accent-600 mt-6 text-sm">
-            لديك حساب بالفعل؟{' '}
-            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">سجّل دخولك</Link>
+            {t('لديك حساب بالفعل؟', 'Already have an account?')}{' '}
+            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">
+              {t('سجّل دخولك', 'Sign in')}
+            </Link>
           </p>
         </div>
       )}
 
-      {/* ── Step 2: Fill details ── */}
       {step === 'form' && (
         <div className="w-full max-w-md bg-white rounded-xl shadow-soft border border-accent-200 p-8">
-          {/* Selected year badge */}
           <button
             type="button"
             onClick={() => setStep('year')}
@@ -190,30 +194,34 @@ export default function RegisterPage() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            تغيير السنة الدراسية
+            {t('تغيير السنة الدراسية', 'Change academic year')}
             <span className="ms-1 px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full text-xs font-bold">
-              {ACADEMIC_YEARS.find(y => y.value === selectedYear)?.label}
+              {academicYearLabel(selectedYear)}
             </span>
           </button>
 
-          <h1 className="text-3xl font-bold text-accent-900 mb-2">إنشاء حساب</h1>
-          <p className="text-accent-600 mb-8">ابدأ رحلتك التعليمية مع منصة أ/ محمد الصباغ</p>
+          <h1 className="text-3xl font-bold text-accent-900 mb-2">
+            {t('إنشاء حساب', 'Create an account')}
+          </h1>
+          <p className="text-accent-600 mb-8">
+            {t('ابدأ رحلتك التعليمية مع منصة أ/ محمد الصباغ', "Start your learning journey with Mr. Mohamed Elsabbagh's platform")}
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-semibold text-accent-800 mb-2">الاسم الكامل</label>
+              <label className="block text-sm font-semibold text-accent-800 mb-2">{t('الاسم الكامل', 'Full name')}</label>
               <input
                 type="text"
                 required
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-all bg-white"
-                placeholder="أدخل اسمك"
+                placeholder={t('أدخل اسمك', 'Enter your name')}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-accent-800 mb-2">البريد الإلكتروني</label>
+              <label className="block text-sm font-semibold text-accent-800 mb-2">{t('البريد الإلكتروني', 'Email')}</label>
               <input
                 type="email"
                 required
@@ -225,7 +233,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-accent-800 mb-2">الهاتف (اختياري)</label>
+              <label className="block text-sm font-semibold text-accent-800 mb-2">{t('الهاتف (اختياري)', 'Phone (optional)')}</label>
               <input
                 type="tel"
                 value={formData.phone}
@@ -236,7 +244,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-accent-800 mb-2">كلمة المرور</label>
+              <label className="block text-sm font-semibold text-accent-800 mb-2">{t('كلمة المرور', 'Password')}</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -245,25 +253,27 @@ export default function RegisterPage() {
                   value={formData.password}
                   onChange={e => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-all pe-12 bg-white"
-                  placeholder="8 أحرف على الأقل"
+                  placeholder={t('8 أحرف على الأقل', 'At least 8 characters')}
                 />
                 <button type="button" onClick={() => setShowPassword(!showPassword)}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-accent-400 hover:text-accent-600">
                   {showPassword ? '🙈' : '👁️'}
                 </button>
               </div>
-              <p className="text-xs text-accent-500 mt-1">يجب أن تحتوي على أحرف كبيرة وصغيرة ورقم</p>
+              <p className="text-xs text-accent-500 mt-1">
+                {t('يجب أن تحتوي على أحرف كبيرة وصغيرة ورقم', 'Must contain uppercase, lowercase, and a number')}
+              </p>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-accent-800 mb-2">تأكيد كلمة المرور</label>
+              <label className="block text-sm font-semibold text-accent-800 mb-2">{t('تأكيد كلمة المرور', 'Confirm password')}</label>
               <input
                 type="password"
                 required
                 value={formData.confirmPassword}
                 onChange={e => setFormData({ ...formData, confirmPassword: e.target.value })}
                 className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-all bg-white"
-                placeholder="أعد كتابة كلمة المرور"
+                placeholder={t('أعد كتابة كلمة المرور', 'Re-enter your password')}
               />
             </div>
 
@@ -278,15 +288,17 @@ export default function RegisterPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  جاري إنشاء الحساب...
+                  {t('جاري إنشاء الحساب...', 'Creating account...')}
                 </span>
-              ) : 'إنشاء حساب'}
+              ) : t('إنشاء حساب', 'Create account')}
             </button>
           </form>
 
           <p className="text-center text-accent-600 mt-8 text-sm">
-            لديك حساب بالفعل؟{' '}
-            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">سجّل دخولك</Link>
+            {t('لديك حساب بالفعل؟', 'Already have an account?')}{' '}
+            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">
+              {t('سجّل دخولك', 'Sign in')}
+            </Link>
           </p>
         </div>
       )}

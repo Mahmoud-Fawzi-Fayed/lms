@@ -3,9 +3,11 @@
 import { SessionProvider } from 'next-auth/react';
 import { Toaster } from 'react-hot-toast';
 import { ReactNode } from 'react';
+import { LanguageProvider } from '@/contexts/LanguageContext';
 
 export default function Providers({ children }: { children: ReactNode }) {
   return (
+    <LanguageProvider>
     <SessionProvider>
       {children}
       <Toaster
@@ -21,5 +23,6 @@ export default function Providers({ children }: { children: ReactNode }) {
         }}
       />
     </SessionProvider>
+    </LanguageProvider>
   );
 }

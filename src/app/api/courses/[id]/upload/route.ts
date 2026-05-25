@@ -37,13 +37,27 @@ export const POST = withAuth(async (req, user) => {
 
   const file = formData.get('file') as File;
   const lessonType = formData.get('type') as string;
-  const uploadId = String(formData.get('uploadId') || '');
+  // SECURITY: uploadId is client-controlled and used to build a filename — restrict to
+  // safe chars to block path traversal (../) and absolute paths. Anything invalid is
+  // replaced with a fresh random id.
+  const rawUploadId = String(formData.get('uploadId') || '');
+  const uploadId = /^[A-Za-z0-9_-]{1,64}$/.test(rawUploadId) ? rawUploadId : '';
   const chunkIndex = Number(formData.get('chunkIndex') || 0);
   const totalChunks = Number(formData.get('totalChunks') || 1);
   const originalFileName = String(formData.get('originalFileName') || file?.name || '');
   const totalFileSize = Number(formData.get('totalFileSize') || file?.size || 0);
 
   if (!file) return apiError('لم يتم اختيار ملف', 400);
+  // Bounds for chunked-upload counters
+  if (!Number.isFinite(chunkIndex) || chunkIndex < 0 || chunkIndex > 100_000) {
+    return apiError('مؤشر الجزء غير صالح', 400);
+  }
+  if (!Number.isFinite(totalChunks) || totalChunks < 1 || totalChunks > 100_000) {
+    return apiError('عدد الأجزاء غير صالح', 400);
+  }
+  if (chunkIndex >= totalChunks) {
+    return apiError('مؤشر الجزء يتجاوز العدد الإجمالي', 400);
+  }
 
   // --- Thumbnail upload ---
   if (lessonType === 'thumbnail') {
@@ -54,7 +68,15 @@ export const POST = withAuth(async (req, user) => {
     const maxImgSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxImgSize) return apiError('حجم الصورة كبير. الحد الأقصى: 5MB', 400);
 
-    const ext = path.extname(file.name || '.jpg').toLowerCase() || '.jpg';
+    // Use a tightly whitelisted extension instead of trusting path.extname on a
+    // client-supplied filename (which can contain unicode confusables or odd chars).
+    const extByMime: Record<string, string> = {
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/webp': '.webp',
+    };
+    const ext = extByMime[file.type] || '.jpg';
     const secureFilename = `thumb_${courseId}_${crypto.randomUUID()}${ext}`;
     const uploadDir = path.join(process.cwd(), 'public', 'thumbnails');
     await fs.mkdir(uploadDir, { recursive: true });
@@ -93,7 +115,9 @@ export const POST = withAuth(async (req, user) => {
   const isMimeAllowed = !!file.type && (allowed.mimes.includes(file.type) || (lessonType === 'video' && file.type.startsWith('video/')));
   const isExtAllowed = allowed.exts.includes(fileExt);
 
-  if (!isMimeAllowed && !isExtAllowed) {
+  // Require BOTH extension AND MIME match — otherwise an attacker can rename
+  // a binary to .mp4 (passes ext check) while sending application/pdf, or vice versa.
+  if (!isMimeAllowed || !isExtAllowed) {
     return apiError(`نوع الملف غير مدعوم لهذا الدرس`, 400);
   }
 
@@ -108,11 +132,17 @@ export const POST = withAuth(async (req, user) => {
     return apiError('الوحدة أو الدرس غير موجود', 404);
   }
 
-  // Generate secure filename
-  const ext = fileExt || (lessonType === 'video' ? '.mp4' : '.pdf');
+  // Generate secure filename — never trust client-supplied parts for the on-disk name.
+  // ext was already validated against `allowed.exts` above.
+  const ext = allowed.exts.includes(fileExt) ? fileExt : (lessonType === 'video' ? '.mp4' : '.pdf');
   const stableUploadId = uploadId || crypto.randomUUID();
+  // lessonType was already constrained to 'video' | 'pdf' by the `allowed` lookup above,
+  // so the directory name is safe; pin it explicitly to avoid any future drift.
+  const subDir = lessonType === 'video' ? 'videos' : 'pdfs';
   const secureFilename = `${courseId}_${stableUploadId}${ext}`;
-  const uploadDir = path.join(process.cwd(), 'uploads', lessonType + 's');
+  const uploadDir = path.join(process.cwd(), 'uploads', subDir);
+  // Defence-in-depth: make sure resolved paths stay inside uploadDir.
+  const _resolvedUploadDir = path.resolve(uploadDir);
 
   try {
     await fs.mkdir(uploadDir, { recursive: true });
@@ -122,11 +152,18 @@ export const POST = withAuth(async (req, user) => {
   }
 
   const filePath = path.join(uploadDir, secureFilename);
+  if (!path.resolve(filePath).startsWith(_resolvedUploadDir + path.sep)) {
+    return apiError('مسار الملف غير صالح', 400);
+  }
   try {
     if (totalChunks > 1) {
       const tempDir = path.join(process.cwd(), 'uploads', 'tmp');
       await fs.mkdir(tempDir, { recursive: true });
+      const _resolvedTempDir = path.resolve(tempDir);
       const tempPath = path.join(tempDir, `${courseId}_${stableUploadId}${ext}.part`);
+      if (!path.resolve(tempPath).startsWith(_resolvedTempDir + path.sep)) {
+        return apiError('مسار الملف المؤقت غير صالح', 400);
+      }
       const chunkBuffer = Buffer.from(await file.arrayBuffer());
 
       if (chunkIndex === 0) {
@@ -153,7 +190,7 @@ export const POST = withAuth(async (req, user) => {
     }
   } catch (e: any) {
     console.error('[upload] write error:', e?.message);
-    return apiError('فشل كتابة الملف: ' + e?.message, 500);
+    return apiError('فشل كتابة الملف على الخادم', 500);
   }
 
   // Update lesson using $set with direct path — avoids markModified issues
@@ -163,13 +200,15 @@ export const POST = withAuth(async (req, user) => {
       $set: {
         [`modules.${moduleIndex}.lessons.${lessonIndex}.filePath`]: filePath,
         [`modules.${moduleIndex}.lessons.${lessonIndex}.fileUrl`]: 'uploaded',
+        // Ensure lesson type matches the uploaded file type (video/pdf)
+        [`modules.${moduleIndex}.lessons.${lessonIndex}.type`]: lessonType,
       },
     });
   } catch (e: any) {
     console.error('[upload] save error:', e?.message);
     // Clean up uploaded file on DB save failure
     await fs.unlink(filePath).catch(() => {});
-    return apiError('فشل حفظ بيانات الكورس: ' + e?.message, 500);
+    return apiError('فشل حفظ بيانات الكورس', 500);
   }
 
   return apiSuccess({ message: 'تم رفع الملف بنجاح' });

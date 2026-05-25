@@ -19,6 +19,11 @@ const nextConfig = {
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'X-XSS-Protection', value: '1; mode=block' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        // HSTS — enforce HTTPS once the site is loaded over HTTPS.
+        // Active only in production builds where the site is expected to be HTTPS.
+        ...(process.env.NODE_ENV === 'production'
+          ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' }]
+          : []),
         {
           key: 'Content-Security-Policy',
           value: [
@@ -27,7 +32,7 @@ const nextConfig = {
             "script-src-elem 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://static.cloudflareinsights.com",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https:",
-            "media-src 'self' blob: https:",
+            "media-src 'self' blob:",
             "connect-src 'self' blob: https://cdnjs.cloudflare.com https://static.cloudflareinsights.com https://accept.paymob.com https://accept.paymobsolutions.com https://*.paymob.com https://*.paymobsolutions.com",
             "frame-src 'self' blob: https://accept.paymob.com https://accept.paymobsolutions.com",
             "frame-ancestors 'none'",
@@ -43,24 +48,9 @@ const nextConfig = {
         },
       ],
     },
-    {
-      source: '/api/content/:path*',
-      headers: [
-        { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
-        {
-          key: 'Content-Security-Policy',
-          value: [
-            "default-src 'self'",
-            "frame-ancestors 'self'",
-            "object-src 'none'",
-            "base-uri 'self'",
-          ].join('; '),
-        },
-        { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate' },
-        { key: 'Pragma', value: 'no-cache' },
-        { key: 'Content-Disposition', value: 'inline' },
-      ],
-    },
+    // /api/content/:path* — all security headers (Cache-Control, X-Frame-Options, CSP)
+    // are set per-response inside the route handler with stricter values.
+    // No config-level overrides needed here.
   ],
   // Prevent source maps in production
   productionBrowserSourceMaps: false,

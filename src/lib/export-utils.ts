@@ -105,13 +105,20 @@ export async function exportToPdf<T>(
 
   document.body.appendChild(container);
 
-  const canvas = await html2canvas(container, {
-    scale: 2,
-    backgroundColor: '#ffffff',
-    useCORS: true,
-  });
-
-  document.body.removeChild(container);
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = await html2canvas(container, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+    });
+  } finally {
+    // Always remove the off-screen node so a rendering error doesn't leak a
+    // 1200px-wide hidden element into the live DOM.
+    if (document.body.contains(container)) {
+      document.body.removeChild(container);
+    }
+  }
 
   const imgData = canvas.toDataURL('image/png');
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });

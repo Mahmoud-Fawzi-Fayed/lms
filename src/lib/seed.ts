@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 import mongoose from 'mongoose';
 import connectDB from './db';
 import { User, Course, Exam, ExamAttempt, Enrollment, Payment } from '../models';

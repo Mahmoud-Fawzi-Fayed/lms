@@ -4,6 +4,8 @@ import { Course, Enrollment } from '@/models';
 import connectDB from '@/lib/db';
 import mongoose from 'mongoose';
 import { isSameAcademicYear, normalizeAcademicYear } from '@/lib/academic-year';
+import fs from 'fs/promises';
+import path from 'path';
 
 // GET /api/courses/[id] - Get course details
 export async function GET(
@@ -89,14 +91,15 @@ export async function GET(
 
     return apiSuccess({ course: sanitizedCourse, isEnrolled, enrollment });
   } catch (error: any) {
-    return apiError(error.message, 500);
+    console.error("API error:", error); return apiError("Internal server error", 500);
   }
 }
 
 // PUT /api/courses/[id] - Update course
 export const PUT = withAuth(async (req, user) => {
   const { id } = { id: req.nextUrl.pathname.split('/').pop()! };
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
 
   const course = await Course.findById(id);
   if (!course) return apiError('الكورس غير موجود', 404);
@@ -150,24 +153,41 @@ export const PUT = withAuth(async (req, user) => {
   }
 
   // When updating modules, preserve existing filePaths (they are select:false so frontend never sees them)
+  // Also preserve videoControls — they are managed exclusively by the PATCH lesson-settings endpoint
+  //
+  // SECURITY: the request body is fully attacker-controlled. NEVER let the caller set
+  // `filePath`/`fileUrl` directly — those are written only by the upload route after
+  // ownership + mime + size checks. Without this stripping, an instructor could submit
+  // a new lesson pointing at another instructor's uploaded file and steal their content.
+  // Likewise `videoControls` must only come from the PATCH lesson-settings endpoint
+  // (boolean-only sanitization) — otherwise an instructor could persist arbitrary objects.
   if (update.modules) {
     const existing = await Course.findById(id).select('+modules.lessons.filePath').lean() as any;
     const filePathMap = new Map<string, string>();
+    const fileUrlMap = new Map<string, any>();
+    const videoControlsMap = new Map<string, any>();
     (existing?.modules || []).forEach((mod: any) => {
       (mod.lessons || []).forEach((lesson: any) => {
-        if (lesson._id && lesson.filePath) {
-          filePathMap.set(lesson._id.toString(), lesson.filePath);
-        }
+        if (!lesson._id) return;
+        const key = lesson._id.toString();
+        if (lesson.filePath) filePathMap.set(key, lesson.filePath);
+        if (lesson.fileUrl) fileUrlMap.set(key, lesson.fileUrl);
+        if (lesson.videoControls) videoControlsMap.set(key, lesson.videoControls);
       });
     });
     update.modules = update.modules.map((mod: any) => ({
       ...mod,
-      lessons: (mod.lessons || []).map((lesson: any) => ({
-        ...lesson,
-        ...(lesson._id && filePathMap.has(String(lesson._id))
-          ? { filePath: filePathMap.get(String(lesson._id)) }
-          : {}),
-      })),
+      lessons: (mod.lessons || []).map((lesson: any) => {
+        // Strip server-managed fields from the incoming body, then re-add from existing.
+        const { filePath: _fp, fileUrl: _fu, videoControls: _vc, ...safe } = lesson || {};
+        const key = lesson?._id ? String(lesson._id) : null;
+        return {
+          ...safe,
+          ...(key && filePathMap.has(key) ? { filePath: filePathMap.get(key) } : {}),
+          ...(key && fileUrlMap.has(key) ? { fileUrl: fileUrlMap.get(key) } : {}),
+          ...(key && videoControlsMap.has(key) ? { videoControls: videoControlsMap.get(key) } : {}),
+        };
+      }),
     }));
   }
 
@@ -204,6 +224,49 @@ export const DELETE = withAuth(async (req, user) => {
     return apiError('لا يمكن حذف كورس يحتوي على طلاب مشتركين. قم بإلغاء النشر بدلاً من ذلك.', 400);
   }
 
+  // Fetch file paths (select:false fields) before deleting the record
+  const courseWithPaths = await Course.findById(id)
+    .select('+modules.lessons.filePath')
+    .lean();
+
   await Course.findByIdAndDelete(id);
+
+  // Clean up lesson files stored on disk to prevent unbounded disk growth.
+  // We do this after the DB delete so a partial failure doesn't leave the
+  // course record dangling (worst case: orphaned files, not a lost course).
+  // SECURITY: only unlink paths that resolve inside our uploads/ or public/thumbnails/
+  // directories. If a lesson row ever contained a poisoned filePath (e.g. via legacy
+  // data or a bypass), we must not delete arbitrary files on disk.
+  try {
+    const uploadsDir = path.resolve(process.cwd(), 'uploads');
+    const thumbsDir = path.resolve(process.cwd(), 'public', 'thumbnails');
+    const safeUnlink = async (fp: string) => {
+      const resolved = path.resolve(fp);
+      const inUploads = resolved === uploadsDir || resolved.startsWith(uploadsDir + path.sep);
+      const inThumbs  = resolved === thumbsDir  || resolved.startsWith(thumbsDir  + path.sep);
+      if (!inUploads && !inThumbs) {
+        console.warn('[course:delete] refusing to unlink path outside managed dirs:', resolved);
+        return;
+      }
+      await fs.unlink(resolved).catch(() => {});
+    };
+
+    const filePaths: string[] = [];
+    for (const mod of (courseWithPaths as any)?.modules || []) {
+      for (const lesson of mod.lessons || []) {
+        if (lesson.filePath) filePaths.push(lesson.filePath);
+      }
+    }
+    // Also remove the thumbnail from public/thumbnails if it is a local file
+    const thumb = (courseWithPaths as any)?.thumbnail as string | undefined;
+    if (thumb?.startsWith('/thumbnails/')) {
+      filePaths.push(path.join(process.cwd(), 'public', thumb));
+    }
+    await Promise.all(filePaths.map(safeUnlink));
+  } catch {
+    // Non-fatal — log but don't block the success response
+    console.warn('[course:delete] failed to clean up some uploaded files for course', id);
+  }
+
   return apiSuccess({ message: 'تم حذف الكورس' });
 }, ['instructor', 'admin']);

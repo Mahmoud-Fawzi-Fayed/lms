@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-const BASE = 'http://localhost:3000';
+const BASE = 'http://localhost:3003';
 const MONGO_URI = 'mongodb://localhost:27017/lms_0xray';
 let passed = 0, failed = 0;
 const failures = [];
@@ -192,7 +192,7 @@ main().catch(e=>{console.error(e);process.exit(1)});
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const BASE = 'http://localhost:3000';
+const BASE = 'http://localhost:3003';
 const MONGO_URI = 'mongodb://localhost:27017/lms_0xray';
 
 let passed = 0, failed = 0;
@@ -480,7 +480,7 @@ main().catch(err => { console.error('Test error:', err); process.exit(1); });
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const BASE = 'http://localhost:3000';
+const BASE = 'http://localhost:3003';
 const MONGO_URI = 'mongodb://localhost:27017/lms_0xray';
 
 let passed = 0, failed = 0;

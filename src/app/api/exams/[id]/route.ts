@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
-import { Exam, ExamAttempt, Enrollment } from '@/models';
+import { withAuth, apiError, apiSuccess, getAuthUser, isValidObjectId } from '@/lib/api-helpers';
+import { Exam, ExamAttempt, Enrollment, ExamEnrollment, Course } from '@/models';
 import connectDB from '@/lib/db';
 import { isSameAcademicYear, normalizeAcademicYear } from '@/lib/academic-year';
 
@@ -11,6 +11,10 @@ export async function GET(
 ) {
   try {
     await connectDB();
+
+    if (!isValidObjectId(params.id)) {
+      return apiError('معرف الاختبار غير صالح', 400);
+    }
 
     const user = await getAuthUser(req);
 
@@ -74,14 +78,15 @@ export async function GET(
       canAttempt: attemptsCount < exam.maxAttempts,
     });
   } catch (error: any) {
-    return apiError(error.message, 500);
+    console.error("API error:", error); return apiError("Internal server error", 500);
   }
 }
 
 // PUT /api/exams/[id] - Update exam
 export const PUT = withAuth(async (req, user) => {
   const id = req.nextUrl.pathname.split('/').pop()!;
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
 
   const exam = await Exam.findById(id).populate('course');
   if (!exam) return apiError('الاختبار غير موجود', 404);
@@ -109,6 +114,24 @@ export const PUT = withAuth(async (req, user) => {
 
   if (update.targetYear !== undefined) {
     update.targetYear = update.targetYear ? normalizeAcademicYear(update.targetYear) : undefined;
+  }
+
+  // SECURITY: if the caller is changing the course association, verify they
+  // own the NEW course too. Otherwise an instructor could re-parent their
+  // exam under another instructor's course and silently inject content there.
+  if (update.course !== undefined && user.role !== 'admin') {
+    if (update.course === null || update.course === '') {
+      update.course = undefined;
+    } else {
+      if (!isValidObjectId(update.course)) {
+        return apiError('معرف الكورس غير صالح', 400);
+      }
+      const newCourse = await Course.findById(update.course).select('instructor');
+      if (!newCourse) return apiError('الكورس الجديد غير موجود', 404);
+      if (newCourse.instructor.toString() !== user.id) {
+        return apiError('غير مصرح لك بربط الاختبار بهذا الكورس', 403);
+      }
+    }
   }
 
   const hasLinkedCourse = update.course !== undefined ? !!update.course : !!exam.course;
@@ -148,7 +171,7 @@ export const PUT = withAuth(async (req, user) => {
     },
     {
       new: true,
-      runValidators: false,
+      runValidators: true,
     }
   );
 
@@ -176,6 +199,8 @@ export const DELETE = withAuth(async (req, user) => {
 
   await Exam.findByIdAndDelete(id);
   await ExamAttempt.deleteMany({ exam: id });
+  // Remove enrollment records so users are not blocked from future re-purchase
+  await ExamEnrollment.deleteMany({ exam: id });
 
   return apiSuccess({ message: 'تم حذف الاختبار' });
 }, ['instructor', 'admin']);

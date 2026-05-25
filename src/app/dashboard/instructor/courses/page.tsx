@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const instructorLinks = [
   { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
@@ -31,8 +33,8 @@ export default function InstructorCoursesPage() {
       const res = await fetch('/api/instructor/stats');
       const data = await res.json();
       if (data.success) setCourses(data.data.courses || []);
-    } catch (error) {
-      console.error('Failed to fetch courses');
+    } catch {
+      toast.error(t('فشل تحميل الكورسات', 'Failed to load courses'));
     } finally {
       setLoading(false);
     }
@@ -44,12 +46,13 @@ export default function InstructorCoursesPage() {
       const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
       const data = await res.json();
       if (!data.success) {
-        alert(data.error || 'فشل حذف الكورس');
+        toast.error(data.error || t('فشل حذف الكورس', 'Failed to delete course'));
         return;
       }
+      toast.success(t('تم حذف الكورس', 'Course deleted'));
       setCourses((prev) => prev.filter((c) => c._id !== courseId));
     } catch {
-      alert('حدث خطأ أثناء حذف الكورس');
+      toast.error(t('خطأ في الحذف', 'Delete error'));
     }
   };
 

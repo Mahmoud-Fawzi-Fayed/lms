@@ -135,7 +135,7 @@ export async function initiatePayment(params: {
     state: 'Cairo',
   };
 
-  // Step 3: Payment key
+  // Step 4: Payment key
   const paymentKey = await generatePaymentKey(
     authToken,
     paymobOrderId,
@@ -158,9 +158,10 @@ export function verifyWebhookHmac(
   data: Record<string, any>,
   receivedHmac: string
 ): boolean {
-  const config = getConfig();
+  try {
+    const config = getConfig();
 
-  // Paymob HMAC verification - concatenate specific fields in order
+    // Paymob HMAC verification - concatenate specific fields in order
   const hmacFields = [
     'amount_cents',
     'created_at',
@@ -208,4 +209,10 @@ export function verifyWebhookHmac(
     Buffer.from(calculatedHmac),
     Buffer.from(receivedHmac)
   );
+  } catch (err) {
+    // getConfig() throws when Paymob env vars are missing; treat as verification failure
+    // so the webhook returns 401 rather than an unhandled 500.
+    console.error('verifyWebhookHmac error (config missing?):', err);
+    return false;
+  }
 }

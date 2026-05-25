@@ -17,7 +17,8 @@ function buildPendingPaymentResponse(method: string, paymentToken: string, ifram
 
 // POST /api/payments/initiate - Start payment flow
 export const POST = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const parsed = initiatePaymentSchema.safeParse(body);
 
   if (!parsed.success) {

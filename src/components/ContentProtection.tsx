@@ -149,6 +149,83 @@ export default function ContentProtection({
       };
     }
 
+    // ── Block in-page recording bypasses ────────────────────────────────────
+    // A motivated user can call `videoEl.captureStream()` to get a MediaStream and
+    // feed it into `new MediaRecorder(...)` to dump the decoded video to webm.
+    // We can't make this fully impossible (custom Chromium builds bypass JS hooks)
+    // but neutering the prototypes stops 99% of console / userscript attempts.
+    const origCaptureStream = (HTMLMediaElement.prototype as any).captureStream;
+    const origMozCaptureStream = (HTMLMediaElement.prototype as any).mozCaptureStream;
+    const origMediaRecorder = window.MediaRecorder;
+
+    function denyCapture(): never {
+      document.body.classList.add('screen-recording');
+      document.querySelectorAll('video').forEach(v => v.pause());
+      showWarning('⚠️ التسجيل من العنصر غير مسموح');
+      throw new DOMException('Capture from protected media element is blocked', 'NotAllowedError');
+    }
+    if (origCaptureStream) {
+      (HTMLMediaElement.prototype as any).captureStream = function (this: HTMLMediaElement) {
+        // Allow capture only on opted-in elements (none exist in protected content today).
+        if (this.dataset?.allowCapture === '1') return origCaptureStream.call(this);
+        denyCapture();
+      };
+    }
+    if (origMozCaptureStream) {
+      (HTMLMediaElement.prototype as any).mozCaptureStream = function (this: HTMLMediaElement) {
+        if (this.dataset?.allowCapture === '1') return origMozCaptureStream.call(this);
+        denyCapture();
+      };
+    }
+    if (origMediaRecorder) {
+      // Wrap the constructor: reject any stream that came from a <video> in the page.
+      const Wrapped = function (this: any, stream: MediaStream, options?: MediaRecorderOptions) {
+        const fromProtectedVideo = Array.from(document.querySelectorAll('video')).some((v: any) => {
+          try {
+            // The captured stream shares the same track ids as the source element.
+            const vidStream = (v.srcObject as MediaStream) || null;
+            if (!vidStream) return false;
+            const ids = new Set(vidStream.getTracks().map(t => t.id));
+            return stream.getTracks().some(t => ids.has(t.id));
+          } catch { return false; }
+        });
+        if (fromProtectedVideo) {
+          document.body.classList.add('screen-recording');
+          showWarning('⚠️ التسجيل غير مسموح');
+          throw new DOMException('MediaRecorder is blocked on protected content', 'NotAllowedError');
+        }
+        return new origMediaRecorder(stream, options);
+      } as any;
+      Wrapped.isTypeSupported = origMediaRecorder.isTypeSupported?.bind(origMediaRecorder);
+      Wrapped.prototype = origMediaRecorder.prototype;
+      window.MediaRecorder = Wrapped;
+    }
+
+    // ── Block canvas → image / blob exfiltration ──────────────────────────
+    // The PDF viewer renders pages onto a <canvas>. A console script could call
+    // `canvas.toDataURL()` / `canvas.toBlob()` to dump every page as PNG and
+    // reconstruct the PDF visually. Override these methods on any canvas that
+    // sits inside a `data-protected="true"` ancestor.
+    const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    const origToBlob    = HTMLCanvasElement.prototype.toBlob;
+    function isProtectedCanvas(c: HTMLCanvasElement): boolean {
+      return !!c.closest('[data-protected="true"]');
+    }
+    HTMLCanvasElement.prototype.toDataURL = function (this: HTMLCanvasElement, ...args: any[]) {
+      if (isProtectedCanvas(this)) {
+        showWarning('⚠️ النسخ من الصفحة غير مسموح');
+        throw new DOMException('Canvas export blocked on protected content', 'SecurityError');
+      }
+      return (origToDataURL as any).apply(this, args);
+    };
+    HTMLCanvasElement.prototype.toBlob = function (this: HTMLCanvasElement, ...args: any[]) {
+      if (isProtectedCanvas(this)) {
+        showWarning('⚠️ النسخ من الصفحة غير مسموح');
+        throw new DOMException('Canvas export blocked on protected content', 'SecurityError');
+      }
+      return (origToBlob as any).apply(this, args);
+    };
+
     // Detect Picture-in-Picture attempts
     const handlePiP = (e: Event) => {
       e.preventDefault();
@@ -176,6 +253,11 @@ export default function ContentProtection({
       if (navigator.mediaDevices && origGetDisplayMedia) {
         navigator.mediaDevices.getDisplayMedia = origGetDisplayMedia;
       }
+      if (origCaptureStream)    (HTMLMediaElement.prototype as any).captureStream    = origCaptureStream;
+      if (origMozCaptureStream) (HTMLMediaElement.prototype as any).mozCaptureStream = origMozCaptureStream;
+      if (origMediaRecorder)    window.MediaRecorder = origMediaRecorder;
+      HTMLCanvasElement.prototype.toDataURL = origToDataURL;
+      HTMLCanvasElement.prototype.toBlob    = origToBlob;
     };
   }, [enabled, handleKeyDown, handleContextMenu, handleVisibilityChange]);
 

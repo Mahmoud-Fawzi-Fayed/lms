@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const adminLinks = [
   { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
@@ -31,8 +33,8 @@ export default function AdminCoursesPage() {
       const res = await fetch('/api/admin/courses?limit=100');
       const data = await res.json();
       if (data.success) setCourses(data.data.courses);
-    } catch (error) {
-      console.error('Failed to fetch courses');
+    } catch {
+      toast.error(t('فشل تحميل الكورسات', 'Failed to load courses'));
     } finally {
       setLoading(false);
     }
@@ -45,9 +47,10 @@ export default function AdminCoursesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isPublished: !isPublished }),
       });
-      if (res.ok) fetchCourses();
-    } catch (error) {
-      console.error('Failed to update course');
+      if (res.ok) { fetchCourses(); toast.success(t('تم تحديث الحالة', 'Status updated')); }
+      else { const d = await res.json(); toast.error(d.error || t('فشل التحديث', 'Update failed')); }
+    } catch {
+      toast.error(t('خطأ في الاتصال', 'Network error'));
     }
   };
 
@@ -55,9 +58,10 @@ export default function AdminCoursesPage() {
     if (!confirm('هل أنت متأكد من حذف هذا الكورس؟')) return;
     try {
       const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
-      if (res.ok) fetchCourses();
-    } catch (error) {
-      console.error('Failed to delete course');
+      if (res.ok) { fetchCourses(); toast.success(t('تم حذف الكورس', 'Course deleted')); }
+      else { const d = await res.json(); toast.error(d.error || t('فشل الحذف', 'Delete failed')); }
+    } catch {
+      toast.error(t('خطأ في الحذف', 'Delete error'));
     }
   };
 

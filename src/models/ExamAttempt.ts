@@ -14,6 +14,7 @@ export interface IExamAttempt extends Document {
   exam: mongoose.Types.ObjectId;
   course?: mongoose.Types.ObjectId;
   answers: IAnswer[];
+  questionSnapshot?: any[]; // Frozen copy of questions (with correct answers) at attempt-start time
   score: number; // Percentage
   totalPoints: number;
   earnedPoints: number;
@@ -52,6 +53,9 @@ const examAttemptSchema = new Schema<IExamAttempt>(
       ref: 'Course',
     },
     answers: [answerSchema],
+    // Stored at attempt-start time so grading uses the exact questions/answers the user saw,
+    // even if the instructor modifies the exam afterward. select:false so it's never sent to client.
+    questionSnapshot: { type: [Schema.Types.Mixed], select: false, default: undefined },
     score: { type: Number, default: 0 },
     totalPoints: { type: Number, default: 0 },
     earnedPoints: { type: Number, default: 0 },

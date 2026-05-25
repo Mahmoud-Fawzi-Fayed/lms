@@ -4,6 +4,8 @@ import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
+import { useLang } from '@/contexts/LanguageContext';
+import { t } from '@/lib/i18n';
 
 interface SidebarLink {
   href: string;
@@ -21,6 +23,8 @@ export default function DashboardSidebar({
   const pathname = usePathname();
   const { data: session } = useSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Subscribe to language so labels flip when toggled.
+  useLang();
 
   return (
     <div className="min-h-screen bg-accent-50 md:flex animate-fade-in">
@@ -30,7 +34,7 @@ export default function DashboardSidebar({
             type="button"
             onClick={() => setMobileOpen(true)}
             className="p-2 rounded-lg hover:bg-accent-50"
-            aria-label="فتح القائمة"
+            aria-label={t('فتح القائمة', 'Open menu')}
           >
             <svg className="w-6 h-6 text-accent-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -43,7 +47,7 @@ export default function DashboardSidebar({
                 <path d="M11.25 4.533A9.707 9.707 0 006 3a9.735 9.735 0 00-3.25.555.75.75 0 00-.5.707v14.25a.75.75 0 001 .707A8.237 8.237 0 016 18.75c1.995 0 3.823.707 5.25 1.886V4.533zM12.75 20.636A8.214 8.214 0 0118 18.75c.966 0 1.89.166 2.75.47a.75.75 0 001-.708V4.262a.75.75 0 00-.5-.707A9.735 9.735 0 0018 3a9.707 9.707 0 00-5.25 1.533v16.103z" />
               </svg>
             </div>
-            <span className="font-bold text-sm text-accent-800 truncate">لوحة التحكم</span>
+            <span className="font-bold text-sm text-accent-800 truncate">{t('لوحة التحكم', 'Dashboard')}</span>
           </Link>
 
           <div className="w-8 h-8 bg-gradient-to-br from-primary-100 to-primary-200 rounded-full flex items-center justify-center text-xs font-bold text-primary-700 flex-shrink-0">
@@ -57,7 +61,7 @@ export default function DashboardSidebar({
           type="button"
           className="fixed inset-0 z-40 bg-slate-900/40 md:hidden"
           onClick={() => setMobileOpen(false)}
-          aria-label="إغلاق القائمة"
+          aria-label={t('إغلاق القائمة', 'Close menu')}
         />
       )}
 
@@ -70,7 +74,7 @@ export default function DashboardSidebar({
               </svg>
             </div>
             <span className="font-bold text-base text-accent-800 truncate">
-              أ/<span className="text-primary-500"> محمد الصباغ</span>
+              {t('أ/', 'Mr.')}<span className="text-primary-500">{t(' محمد الصباغ', ' Mohamed Elsabbagh')}</span>
             </span>
           </Link>
 
@@ -89,8 +93,8 @@ export default function DashboardSidebar({
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-accent-900 text-sm truncate">{session?.user?.name}</div>
               <div className="text-xs text-accent-500">
-                {(session?.user as any)?.role === 'admin' ? '👨‍💼 مسؤول' :
-                 (session?.user as any)?.role === 'instructor' ? '👨‍🏫 محاضر' : '👤 طالب'}
+                {(session?.user as any)?.role === 'admin' ? '👨‍💼 ' + t('مسؤول', 'Admin') :
+                 (session?.user as any)?.role === 'instructor' ? '👨‍🏫 ' + t('محاضر', 'Instructor') : '👤 ' + t('طالب', 'Student')}
               </div>
             </div>
           </div>
@@ -123,7 +127,7 @@ export default function DashboardSidebar({
             className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 w-full transition-colors"
           >
             <span className="text-lg">🚪</span>
-            <span>تسجيل الخروج</span>
+            <span>{t('تسجيل الخروج', 'Sign Out')}</span>
           </button>
         </div>
       </aside>

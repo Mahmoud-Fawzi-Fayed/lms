@@ -5,19 +5,22 @@ import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
-function mapAuthErrorToArabic(error?: string | null) {
-  if (!error) return 'تعذر تسجيل الدخول. حاول مرة أخرى.';
+function mapAuthError(error?: string | null) {
+  if (!error) return t('تعذر تسجيل الدخول. حاول مرة أخرى.', 'Login failed. Please try again.');
 
   const normalized = error.toLowerCase();
-  if (normalized.includes('credentialssignin')) return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
-  if (normalized.includes('email') && normalized.includes('password')) return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
-  if (normalized.includes('deactivated')) return 'الحساب غير مفعل حالياً. تواصل مع الدعم الفني.';
+  if (normalized.includes('credentialssignin')) return t('البريد الإلكتروني أو كلمة المرور غير صحيحة', 'Incorrect email or password');
+  if (normalized.includes('email') && normalized.includes('password')) return t('البريد الإلكتروني أو كلمة المرور غير صحيحة', 'Incorrect email or password');
+  if (normalized.includes('deactivated')) return t('الحساب غير مفعل حالياً. تواصل مع الدعم الفني.', 'Account is deactivated. Contact support.');
 
   return error;
 }
 
 function LoginContent() {
+  useLang();
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
@@ -38,14 +41,14 @@ function LoginContent() {
       });
 
       if (result?.error) {
-        toast.error(mapAuthErrorToArabic(result.error));
+        toast.error(mapAuthError(result.error));
       } else {
-        toast.success('مرحباً بك!');
+        toast.success(t('مرحباً بك!', 'Welcome back!'));
         router.push(callbackUrl);
         router.refresh();
       }
     } catch (error) {
-      toast.error('حدث خطأ. حاول مرة أخرى.');
+      toast.error(t('حدث خطأ. حاول مرة أخرى.', 'An error occurred. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -63,17 +66,17 @@ function LoginContent() {
               </svg>
             </div>
             <span className="font-bold text-base text-accent-800">
-              أ/<span className="text-primary-500"> محمد الصباغ</span>
+              {t('أ/', 'Mr.')}<span className="text-primary-500"> {t('محمد الصباغ', 'Mohamed Elsabbagh')}</span>
             </span>
           </Link>
 
-          <h1 className="text-4xl font-bold text-accent-900 mb-2">أهلاً بعودتك!</h1>
-          <p className="text-accent-600 mb-10 text-lg">سجّل دخولك لاستكمال رحلتك التعليمية</p>
+          <h1 className="text-4xl font-bold text-accent-900 mb-2">{t('أهلاً بعودتك!', 'Welcome back!')}</h1>
+          <p className="text-accent-600 mb-10 text-lg">{t('سجّل دخولك لاستكمال رحلتك التعليمية', 'Sign in to continue your learning journey')}</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-accent-800 mb-2">
-                البريد الإلكتروني
+                {t('البريد الإلكتروني', 'Email')}
               </label>
               <input
                 type="email"
@@ -87,7 +90,7 @@ function LoginContent() {
 
             <div>
               <label className="block text-sm font-semibold text-accent-800 mb-2">
-                كلمة المرور
+                {t('كلمة المرور', 'Password')}
               </label>
               <div className="relative">
                 <input
@@ -96,7 +99,7 @@ function LoginContent() {
                   value={formData.password}
                   onChange={e => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition-all pe-12 bg-white"
-                  placeholder="أدخل كلمة المرور"
+                  placeholder={t('أدخل كلمة المرور', 'Enter your password')}
                 />
                 <button
                   type="button"
@@ -119,16 +122,16 @@ function LoginContent() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  جاري تسجيل الدخول...
+                  {t('جاري تسجيل الدخول...', 'Signing in...')}
                 </span>
               ) : (
-                'تسجيل الدخول'
+                t('تسجيل الدخول', 'Sign In')
               )}
             </button>
           </form>
 
           <p className="text-accent-600 text-center mt-8">
-            لا تملك حساب؟ <Link href="/register" className="text-primary-600 font-semibold hover:text-primary-700">أنشئ واحد الآن</Link>
+            {t('لا تملك حساب؟', "Don't have an account?")} <Link href="/register" className="text-primary-600 font-semibold hover:text-primary-700">{t('أنشئ واحد الآن', 'Create one now')}</Link>
           </p>
         </div>
       </div>
@@ -138,12 +141,12 @@ function LoginContent() {
         <div className="absolute top-20 right-20 w-64 h-64 bg-white/5 rounded-full blur-3xl" />
         <div className="absolute bottom-20 left-20 w-48 h-48 bg-white/5 rounded-full blur-3xl" />
         <div className="max-w-md text-white relative z-10">
-          <h2 className="text-4xl font-bold mb-6">أهلاً بك في منصة أ/ محمد الصباغ</h2>
+          <h2 className="text-4xl font-bold mb-6">{t('أهلاً بك في منصة أ/ محمد الصباغ', "Welcome to Mr. Mohamed Elsabbagh's platform")}</h2>
           <p className="text-primary-100 text-lg mb-10 leading-relaxed">
-            منصة تعليمية حديثة توفر محتوى عالي الجودة وتجربة تعلم استثنائية
+            {t('منصة تعليمية حديثة توفر محتوى عالي الجودة وتجربة تعلم استثنائية', 'A modern learning platform offering high-quality content and an exceptional learning experience')}
           </p>
           <div className="space-y-4">
-            {['محتوى عالي الجودة', 'اختبارات ذكية', 'تتبع التقدم', 'حماية كاملة'].map(
+            {[t('محتوى عالي الجودة', 'High-quality content'), t('اختبارات ذكية', 'Smart exams'), t('تتبع التقدم', 'Progress tracking'), t('حماية كاملة', 'Full protection')].map(
               (item, i) => (
                 <div key={i} className="flex items-center gap-3">
                   <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">

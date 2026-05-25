@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import DOMPurify from 'dompurify';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import SecureVideoPlayer from '@/components/SecureVideoPlayer';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { formatPrice, formatDuration } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 export default function CourseDetailPage() {
   const { slug } = useParams();
@@ -17,10 +20,11 @@ export default function CourseDetailPage() {
 
   const [course, setCourse] = useState<any>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
+  const [enrollment, setEnrollment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
-  const [previewModal, setPreviewModal] = useState<{ open: boolean; contentUrl: string; type: string; title: string; textContent: string }>({ open: false, contentUrl: '', type: '', title: '', textContent: '' });
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; contentUrl: string; type: string; title: string; textContent: string; videoControls?: any }>({ open: false, contentUrl: '', type: '', title: '', textContent: '' });
   const [courseExams, setCourseExams] = useState<any[]>([]);
 
   useEffect(() => {
@@ -34,11 +38,13 @@ export default function CourseDetailPage() {
       if (data.success) {
         setCourse(data.data.course);
         setIsEnrolled(data.data.isEnrolled);
-        // Fetch exams linked to this course
+        setEnrollment(data.data.enrollment || null);
         fetchCourseExams(data.data.course._id);
+      } else {
+        toast.error(data.error || t('تعذر تحميل الكورس', 'Failed to load course'));
       }
-    } catch (error) {
-      console.error('Failed to fetch course:', error);
+    } catch {
+      toast.error(t('فشل الاتصال بالخادم', 'Network error, please retry'));
     } finally {
       setLoading(false);
     }
@@ -51,8 +57,8 @@ export default function CourseDetailPage() {
       if (data.success) {
         setCourseExams(data.data.exams || []);
       }
-    } catch (error) {
-      console.error('Failed to fetch course exams:', error);
+    } catch {
+      // Non-critical — exams section will simply be empty
     }
   };
 
@@ -73,12 +79,12 @@ export default function CourseDetailPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'تعذر بدء عملية الدفع');
+        toast.error(data.error || t('تعذر بدء عملية الدفع', 'Payment initiation failed'));
         return;
       }
 
       if (data.data.enrolled) {
-        toast.success('تم التسجيل بنجاح!');
+        toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'))
         setIsEnrolled(true);
         return;
       }
@@ -93,12 +99,12 @@ export default function CourseDetailPage() {
       } else if (data.data.paymentUrl) {
         window.location.href = data.data.paymentUrl;
       } else if (data.data.fawryRef) {
-        toast.success(`تم إنشاء مرجع فوري: ${data.data.fawryRef}`);
+        toast.success(`${t('تم إنشاء مرجع فوري', 'Fawry ref created')}: ${data.data.fawryRef}`);
       } else {
-        toast.success('تم بدء عملية الدفع. أكمل الدفع للتسجيل.');
+        toast.success(t('تم بدء عملية الدفع. أكمل الدفع للتسجيل.', 'Payment started. Complete payment to enroll.'));
       }
     } catch (error) {
-      toast.error('فشل الدفع. حاول مرة أخرى.');
+      toast.error(t('فشل الدفع. حاول مرة أخرى.', 'Payment failed. Please try again.'));
     } finally {
       setPaymentLoading(false);
     }
@@ -114,9 +120,10 @@ export default function CourseDetailPage() {
     let lessonType = 'video';
     let lessonTitle = '';
     let lessonTextContent = '';
+    let lessonVideoControls: any = undefined;
     for (const mod of course.modules || []) {
       const l = (mod.lessons || []).find((ls: any) => ls._id === lessonId);
-      if (l) { lessonType = l.type; lessonTitle = l.title; lessonTextContent = l.content || ''; break; }
+      if (l) { lessonType = l.type; lessonTitle = l.title; lessonTextContent = l.content || ''; lessonVideoControls = l.videoControls; break; }
     }
 
     // Text lessons don't need a content token — show directly
@@ -126,18 +133,20 @@ export default function CourseDetailPage() {
     }
 
     try {
-      const res = await fetch(`/api/courses/${course._id}/content-token?lessonId=${lessonId}`);
+      const kind = lessonType === 'video' ? 'stream' : 'raw';
+      const res = await fetch(`/api/courses/${course._id}/content-token?lessonId=${lessonId}&kind=${kind}`);
       const data = await res.json();
 
       if (!res.ok || !data.success || !data.data?.token) {
-        toast.error(data.error || 'تعذر فتح المعاينة');
+        toast.error(data.error || t('تعذر فتح المعاينة', 'Preview failed to open'));
         return;
       }
 
-      const contentUrl = `/api/content/${data.data.token}?mode=raw`;
-      setPreviewModal({ open: true, contentUrl, type: lessonType, title: lessonTitle, textContent: '' });
+      const mode = lessonType === 'video' ? 'stream' : 'raw';
+      const contentUrl = `/api/content/${data.data.token}?mode=${mode}`;
+      setPreviewModal({ open: true, contentUrl, type: lessonType, title: lessonTitle, textContent: '', videoControls: lessonVideoControls });
     } catch {
-      toast.error('فشل فتح المعاينة');
+      toast.error(t('فشل فتح المعاينة', 'Preview error'));
     }
   };
 
@@ -255,14 +264,49 @@ export default function CourseDetailPage() {
                   )}
                 </div>
 
-                {isEnrolled ? (
-                  <Link
-                    href={`/courses/learn/${course._id}`}
-                    className="block w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl text-center transition-colors mb-4"
-                  >
-                    متابعة التعلم
-                  </Link>
-                ) : (
+                {isEnrolled ? (() => {
+                  const totalLessons = (course.modules || []).reduce(
+                    (acc: number, m: any) => acc + ((m.lessons || []).length), 0
+                  );
+                  const completedCount = enrollment?.progress?.completedLessons?.length || 0;
+                  const percentage = enrollment?.progress?.percentage
+                    ?? (totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0);
+                  const isComplete = totalLessons > 0 && completedCount >= totalLessons;
+                  const isStarted = completedCount > 0;
+
+                  return (
+                    <div className="mb-4">
+                      {isStarted && (
+                        <div className="mb-3">
+                          <div className="flex justify-between text-sm text-gray-600 mb-1">
+                            <span>{t('تقدّمُك', 'Your progress')}</span>
+                            <span className="font-semibold">{percentage}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all ${isComplete ? 'bg-green-600' : 'bg-blue-600'}`}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <Link
+                        href={`/courses/learn/${course._id}`}
+                        className={`block w-full py-3 font-semibold rounded-xl text-center transition-colors text-white ${
+                          isComplete
+                            ? 'bg-emerald-600 hover:bg-emerald-700'
+                            : 'bg-green-600 hover:bg-green-700'
+                        }`}
+                      >
+                        {isComplete
+                          ? t('✓ اكتمل — أعد المراجعة', '✓ Completed — Review again')
+                          : isStarted
+                            ? t(`متابعة التعلم (${percentage}%)`, `Continue learning (${percentage}%)`)
+                            : t('ابدأ التعلم', 'Start learning')}
+                      </Link>
+                    </div>
+                  );
+                })() : (
                   <div className="space-y-3 mb-4">
                     <button
                       onClick={() => handleEnroll('card')}
@@ -502,9 +546,11 @@ export default function CourseDetailPage() {
 
         {/* ── Preview Modal ── */}
         {previewModal.open && (
+          /* Backdrop — click outside content to close */
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
             onContextMenu={(e) => e.preventDefault()}
+            onClick={closePreview}
           >
             {/* Close button */}
             <button
@@ -520,15 +566,13 @@ export default function CourseDetailPage() {
               {previewModal.title}
             </div>
 
-            {/* Watermark overlay — multi-layer forensic (like VdoCipher/Udemy) */}
+            {/* Watermark overlay */}
             <div className="absolute inset-0 pointer-events-none z-40 select-none overflow-hidden" style={{ userSelect: 'none' }}>
-              {/* Center watermark */}
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-white/[0.06] text-4xl font-bold rotate-[-30deg] whitespace-nowrap">
                   {session?.user?.email || session?.user?.name || 'Preview'}
                 </div>
               </div>
-              {/* Tiled watermarks for screen recording */}
               <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-32 rotate-[-25deg] scale-150">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <span key={i} className="text-white/[0.03] text-sm font-medium whitespace-nowrap">
@@ -538,30 +582,42 @@ export default function CourseDetailPage() {
               </div>
             </div>
 
-            {/* Content area */}
-            <div className="relative z-30 w-[96vw] max-w-[1800px] mx-2 md:mx-4" style={{ maxHeight: '96vh' }}>
-              {/* VIDEO */}
+            {/* Content area — stopPropagation so clicking inside doesn't close */}
+            <div
+              className="relative z-30 flex items-center justify-center"
+              style={{ width: '100%', height: '100%', paddingTop: '52px', paddingBottom: '8px', paddingLeft: '8px', paddingRight: '8px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* VIDEO — width capped by height*16/9 so it fills screen without overflow */}
               {previewModal.type === 'video' && (
-                <PreviewVideo url={previewModal.contentUrl} />
+                <div style={{ width: '100%', maxWidth: 'min(calc(100vw - 16px), calc((100vh - 68px) * 16 / 9))' }}>
+                  <SecureVideoPlayer
+                    src={previewModal.contentUrl}
+                    title={previewModal.title}
+                    controls={previewModal.videoControls}
+                  />
+                </div>
               )}
 
               {/* PDF */}
               {previewModal.type === 'pdf' && (
-                <PreviewPdf url={previewModal.contentUrl} />
+                <div className="w-full max-w-4xl" style={{ maxHeight: 'calc(100vh - 68px)', overflowY: 'auto' }}>
+                  <PreviewPdf url={previewModal.contentUrl} />
+                </div>
               )}
 
               {/* TEXT */}
               {previewModal.type === 'text' && (
                 <div
-                  className="bg-white rounded-2xl p-6 md:p-8 max-h-[88vh] overflow-y-auto text-right select-none"
+                  className="bg-white rounded-2xl p-6 md:p-8 w-full max-w-3xl text-right select-none"
+                  style={{ maxHeight: 'calc(100vh - 68px)', overflowY: 'auto', userSelect: 'none', WebkitUserSelect: 'none' } as any}
                   dir="rtl"
-                  style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                   onCopy={(e) => e.preventDefault()}
                 >
                   <h2 className="text-xl font-bold text-slate-900 mb-4 border-b pb-3">{previewModal.title}</h2>
                   <div
                     className="prose prose-slate max-w-none text-slate-700 leading-loose"
-                    dangerouslySetInnerHTML={{ __html: previewModal.textContent || '<p>لا يوجد محتوى لهذا الدرس</p>' }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewModal.textContent || '<p>لا يوجد محتوى لهذا الدرس</p>') }}
                   />
                 </div>
               )}
@@ -571,140 +627,6 @@ export default function CourseDetailPage() {
       </main>
       <Footer />
     </>
-  );
-}
-
-/* ── Protected Video Player – CANVAS RENDERING (no <video> visible in DOM) ── */
-function PreviewVideo({ url }: { url: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const animRef = useRef<number>(0);
-  const [err, setErr] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
-
-  // Fetch as blob, set on hidden video, immediately revoke
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    fetch(url, { credentials: 'include', headers: { 'X-Content-Request': '1' } })
-      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
-      .then(b => {
-        const bUrl = URL.createObjectURL(b);
-        video.src = bUrl;
-        // Revoke immediately once data is grabbed — URL becomes useless in DevTools
-        video.addEventListener('loadeddata', () => URL.revokeObjectURL(bUrl), { once: true });
-      })
-      .catch(() => setErr(true));
-  }, [url]);
-
-  // Canvas rendering loop — paint video frames to <canvas>
-  useEffect(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const draw = () => {
-      if (video.readyState >= 2) {
-        if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth || 1280;
-        if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight || 720;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      }
-      animRef.current = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(animRef.current);
-  }, []);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const onLoaded = () => { setDuration(v.duration); setLoading(false); v.play().then(() => setPlaying(true)).catch(() => {}); };
-    const onTime = () => setCurrentTime(v.currentTime);
-    const onEnd = () => setPlaying(false);
-    v.addEventListener('loadedmetadata', onLoaded);
-    v.addEventListener('timeupdate', onTime);
-    v.addEventListener('ended', onEnd);
-    return () => { v.removeEventListener('loadedmetadata', onLoaded); v.removeEventListener('timeupdate', onTime); v.removeEventListener('ended', onEnd); };
-  }, []);
-
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current; if (!v) return;
-    if (v.paused) { v.play(); setPlaying(true); } else { v.pause(); setPlaying(false); }
-  }, []);
-
-  const seek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const v = videoRef.current; if (!v || !v.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    v.currentTime = ((e.clientX - rect.left) / rect.width) * v.duration;
-  }, []);
-
-  const toggleMute = useCallback(() => { const v = videoRef.current; if (!v) return; v.muted = !v.muted; setMuted(v.muted); }, []);
-  const changeVolume = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = videoRef.current; if (!v) return;
-    const val = parseFloat(e.target.value); v.volume = val; setVolume(val);
-    if (val === 0) { v.muted = true; setMuted(true); } else { v.muted = false; setMuted(false); }
-  }, []);
-  const toggleFS = useCallback(() => {
-    const el = containerRef.current; if (!el) return;
-    document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen();
-  }, []);
-  const resetHide = useCallback(() => {
-    setShowControls(true);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => { setPlaying(p => { if (p) setShowControls(false); return p; }); }, 3000);
-  }, []);
-  const fmtTime = (s: number) => { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec.toString().padStart(2, '0')}`; };
-
-  if (err) return <div className="text-white text-center py-12">فشل تحميل الفيديو</div>;
-
-  return (
-    <div ref={containerRef} className="relative rounded-xl overflow-hidden bg-black select-none" onContextMenu={(e) => e.preventDefault()} onMouseMove={resetHide} onClick={togglePlay}>
-      {/* Hidden video — source for canvas, invisible to user */}
-      <video ref={videoRef} playsInline disablePictureInPicture style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none', zIndex: -1 }} />
-      {/* Visible canvas — right-click shows "Save Image" not "Save Video" */}
-      <canvas ref={canvasRef} className="w-full max-h-[90vh] block" style={{ background: '#000' }} onContextMenu={(e) => e.preventDefault()} />
-
-      {loading && <div className="absolute inset-0 flex items-center justify-center"><div className="animate-spin w-10 h-10 border-2 border-white border-t-transparent rounded-full" /></div>}
-      {!playing && !loading && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </div>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-8 pb-3 px-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`} onClick={(e) => e.stopPropagation()}>
-        <div className="group cursor-pointer h-1.5 bg-white/30 rounded-full mb-3 relative" onClick={seek}>
-          <div className="h-full bg-blue-500 rounded-full relative" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }}>
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-blue-500 rounded-full border-2 border-white opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={togglePlay} className="text-white hover:text-blue-400 transition-colors">
-            {playing ? <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
-          </button>
-          <span className="text-white/80 text-xs font-mono min-w-[80px]">{fmtTime(currentTime)} / {fmtTime(duration)}</span>
-          <div className="flex-1" />
-          <button onClick={toggleMute} className="text-white hover:text-blue-400 transition-colors">
-            {muted || volume === 0 ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg> : <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>}
-          </button>
-          <input type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} onChange={changeVolume} onClick={(e) => e.stopPropagation()} className="w-16 h-1 accent-blue-500 cursor-pointer" />
-          <button onClick={toggleFS} className="text-white hover:text-blue-400 transition-colors">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

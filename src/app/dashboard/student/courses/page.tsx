@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const studentLinks = [
   { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
@@ -31,8 +33,8 @@ export default function StudentCoursesPage() {
       const res = await fetch('/api/enrollments');
       const data = await res.json();
       if (data.success) setEnrollments(data.data.enrollments || []);
-    } catch (error) {
-      console.error('Failed to fetch enrollments');
+    } catch {
+      toast.error(t('فشل تحميل كورساتك', 'Failed to load your courses'));
     } finally {
       setLoading(false);
     }

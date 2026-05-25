@@ -5,8 +5,11 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
+import SecureVideoPlayer from '@/components/SecureVideoPlayer';
 import { uploadFileWithProgress } from '@/lib/upload-client';
 import { ACADEMIC_YEARS } from '@/lib/validations';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 type LessonType = 'video' | 'pdf' | 'text';
 
@@ -95,6 +98,26 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
           });
         });
         setLessonSettings(settings);
+
+        // Auto-load stream URLs for video lessons that already have a file uploaded
+        const previewUrls: Record<string, string> = {};
+        for (const [mi, mod] of (c.modules || []).entries()) {
+          for (const [li, lesson] of (mod.lessons || []).entries()) {
+            if (lesson.type === 'video' && lesson.fileUrl && lesson._id) {
+              try {
+                const tokenRes = await fetch(`/api/courses/${id}/content-token?lessonId=${lesson._id}&kind=stream`);
+                const tokenData = await tokenRes.json();
+                if (tokenData.success) {
+                  previewUrls[`${mi}-${li}`] = `/api/content/${tokenData.data.token}?mode=stream`;
+                }
+              } catch { /* skip if token fetch fails */ }
+            }
+          }
+        }
+        if (Object.keys(previewUrls).length > 0) {
+          setFilePreviewUrls(previewUrls);
+        }
+
         setForm({
           title: c.title,
           description: c.description,
@@ -124,7 +147,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         });
       }
     } catch {
-      console.error('Failed to fetch course');
+      toast.error(t('فشل تحميل الكورس', 'Failed to load course'));
     } finally {
       setLoading(false);
     }
@@ -252,6 +275,10 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
       });
 
       if (data.success) {
+        // Clear stale preview URL so a re-fetch is triggered for the new file
+        setFilePreviewUrls(prev => { const updated = { ...prev }; delete updated[key]; return updated; });
+        // Clear progress indicator
+        setUploadProgress(prev => { const updated = { ...prev }; delete updated[key]; return updated; });
         await fetchCourse();
       } else {
         setUploadError(data.error || 'فشل رفع الملف');
@@ -275,9 +302,13 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         body: JSON.stringify({ moduleIndex: mi, lessonIndex: li, videoControls: settings }),
       });
       const data = await res.json();
-      if (!data.success) setUploadError(data.error || 'فشل حفظ الإعدادات');
+      if (data.success) {
+        toast.success(t('تم حفظ إعدادات الفيديو', 'Video settings saved'));
+      } else {
+        toast.error(data.error || t('فشل حفظ الإعدادات', 'Failed to save settings'));
+      }
     } catch {
-      setUploadError('فشل حفظ الإعدادات');
+      toast.error(t('فشل حفظ الإعدادات', 'Failed to save settings'));
     } finally {
       setSavingSettings(null);
     }
@@ -286,28 +317,26 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
   const loadFilePreview = async (mi: number, li: number, lessonId?: string, lessonType?: string) => {
     if (!lessonId) return;
     const key = `${mi}-${li}`;
-    if (filePreviewUrls[key]) return;
+    // Don't skip re-fetch — always get a fresh token to avoid serving a stale/replaced file
+    if (previewingKey === key) return; // only guard against concurrent double-clicks
     setPreviewingKey(key);
     try {
-      const tokenRes = await fetch(`/api/courses/${id}/content-token?lessonId=${lessonId}`);
+      const kind = lessonType === 'video' ? 'stream' : 'raw';
+      const tokenRes = await fetch(`/api/courses/${id}/content-token?lessonId=${lessonId}&kind=${kind}`);
       const tokenData = await tokenRes.json();
       if (!tokenData.success) {
         setUploadError(tokenData.error || 'فشل تحميل المعاينة');
         return;
       }
       const token = tokenData.data.token;
-      const contentUrl = `/api/content/${token}?mode=raw`;
-      if (lessonType === 'pdf') {
-        // PDF: store the URL — PdfCanvasViewer will fetch it
-        setFilePreviewUrls((prev) => ({ ...prev, [key]: contentUrl }));
+      if (lessonType === 'video') {
+        // Videos: use mode=stream so the <video> element can stream natively
+        // (no full blob download — critical for large files)
+        const streamUrl = `/api/content/${token}?mode=stream`;
+        setFilePreviewUrls(prev => ({ ...prev, [key]: streamUrl }));
       } else {
-        // Video: fetch as blob with custom header
-        const res = await fetch(contentUrl, { credentials: 'include', headers: { 'X-Content-Request': '1' } });
-        if (!res.ok) throw new Error();
-        const raw = await res.blob();
-        const blob = new Blob([raw], { type: 'video/mp4' });
-        const blobUrl = URL.createObjectURL(blob);
-        setFilePreviewUrls((prev) => ({ ...prev, [key]: blobUrl }));
+        // PDFs: use mode=raw; PdfCanvasViewer will fetch with X-Content-Request
+        setFilePreviewUrls(prev => ({ ...prev, [key]: `/api/content/${token}?mode=raw` }));
       }
     } catch {
       setUploadError('فشل تحميل المعاينة');
@@ -333,7 +362,16 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
 
   const toggleSetting = (mi: number, li: number, k: string, value: boolean) => {
     const key = `${mi}-${li}`;
+    // Update the dedicated lessonSettings state (used by the settings panel UI)
     setLessonSettings(prev => ({ ...prev, [key]: { ...(prev[key] || {}), [k]: value } }));
+    // Also keep form.modules in sync so handleSave doesn't overwrite with stale values
+    setForm((prev: any) => {
+      const modules = [...prev.modules];
+      const lessons = [...modules[mi].lessons];
+      lessons[li] = { ...lessons[li], videoControls: { ...(lessons[li].videoControls || {}), [k]: value } };
+      modules[mi] = { ...modules[mi], lessons };
+      return { ...prev, modules };
+    });
   };
 
   const toggleModule = (mi: number) => {
@@ -579,13 +617,6 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                     </div>
                                   </div>
                                 )}
-                                {filePreviewUrls[key] && lesson.type === 'video' && (
-                                  <video
-                                    src={filePreviewUrls[key]}
-                                    controls
-                                    className="w-full max-h-[75vh] rounded-lg border border-slate-200 bg-black"
-                                  />
-                                )}
                                 {filePreviewUrls[key] && lesson.type === 'pdf' && (
                                   <PdfCanvasViewer src={filePreviewUrls[key]} protected maxHeight="75vh" />
                                 )}
@@ -602,6 +633,16 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
                                 <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 border-b border-slate-200">
                                   <span className="text-xs font-semibold text-slate-700">⚙️ إعدادات مشغّل الفيديو</span>
                                 </div>
+                                {filePreviewUrls[key] && (
+                                  <div className="p-3 bg-black">
+                                    <SecureVideoPlayer
+                                      key={filePreviewUrls[key]}
+                                      src={filePreviewUrls[key]}
+                                      title={lesson.title}
+                                      controls={settings}
+                                    />
+                                  </div>
+                                )}
                                 <div className="divide-y divide-slate-100">
                                   {([
                                     { k: 'allowSpeed', label: 'سرعة التشغيل' },

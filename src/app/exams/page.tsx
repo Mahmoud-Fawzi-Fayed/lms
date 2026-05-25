@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 
 export default function ExamsPage() {
+  useLang();
   const { data: session } = useSession();
   const router = useRouter();
   const [exams, setExams] = useState<any[]>([]);
@@ -27,7 +30,7 @@ export default function ExamsPage() {
         setExams(data.data.exams || []);
       }
     } catch {
-      toast.error('تعذر تحميل الاختبارات');
+      toast.error(t('تعذر تحميل الاختبارات', 'Failed to load exams'));
     } finally {
       setLoading(false);
     }
@@ -57,12 +60,12 @@ export default function ExamsPage() {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        toast.error(data.error || 'تعذر بدء عملية الدفع');
+        toast.error(data.error || t('تعذر بدء عملية الدفع', 'Payment initiation failed'));
         return;
       }
 
       if (data.data.enrolled) {
-        toast.success('تم تفعيل الاختبار بنجاح');
+        toast.success(t('تم تفعيل الاختبار بنجاح', 'Exam activated successfully'));
         await fetchExams();
         return;
       }
@@ -72,9 +75,9 @@ export default function ExamsPage() {
         return;
       }
 
-      toast.success('تم إنشاء الدفع بنجاح');
+      toast.success(t('تم إنشاء الدفع بنجاح', 'Payment created successfully'));
     } catch {
-      toast.error('حدث خطأ أثناء الدفع');
+      toast.error(t('حدث خطأ أثناء الدفع', 'Payment error occurred'));
     } finally {
       setPayingExamId(null);
     }
@@ -86,8 +89,8 @@ export default function ExamsPage() {
       <main className="min-h-screen bg-accent-50">
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-accent-900 mb-2">الامتحانات</h1>
-            <p className="text-accent-600">اختبارات مستقلة أو مرتبطة بالكورسات. يمكنك البدء مباشرة إذا كانت مجانية أو شراء الاختبار المدفوع.</p>
+            <h1 className="text-3xl md:text-4xl font-bold text-accent-900 mb-2">{t('الامتحانات', 'Exams')}</h1>
+            <p className="text-accent-600">{t('اختبارات مستقلة أو مرتبطة بالكورسات. يمكنك البدء مباشرة إذا كانت مجانية أو شراء الاختبار المدفوع.', 'Independent exams or exams tied to courses. Start free exams directly or purchase paid ones.')}</p>
           </div>
 
           {loading ? (
@@ -116,40 +119,40 @@ export default function ExamsPage() {
                       <h3 className="font-bold text-accent-900 line-clamp-2">{exam.title}</h3>
                       {isStandalone ? (
                         finalPrice > 0 ? (
-                          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-blue-100 text-blue-700 whitespace-nowrap">مدفوع</span>
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-blue-100 text-blue-700 whitespace-nowrap">{t('مدفوع', 'Paid')}</span>
                         ) : (
-                          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700 whitespace-nowrap">مجاني</span>
+                          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700 whitespace-nowrap">{t('مجاني', 'Free')}</span>
                         )
                       ) : (
-                        <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700 whitespace-nowrap">ضمن كورس</span>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700 whitespace-nowrap">{t('ضمن كورس', 'In a course')}</span>
                       )}
                     </div>
 
                     <p className="text-sm text-accent-600 mb-4 line-clamp-2">
-                      {exam.description || 'اختبار تقييمي لقياس مستوى التحصيل.'}
+                      {exam.description || t('اختبار تقييمي لقياس مستوى التحصيل.', 'An assessment exam to measure your level.')}
                     </p>
 
                     <div className="space-y-2 text-xs text-accent-500 mb-5">
                       <div className="flex items-center justify-between">
-                        <span>المدة</span>
-                        <span className="font-semibold text-accent-700">{exam.duration} دقيقة</span>
+                        <span>{t('المدة', 'Duration')}</span>
+                        <span className="font-semibold text-accent-700">{exam.duration} {t('دقيقة', 'min')}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>عدد الأسئلة</span>
+                        <span>{t('عدد الأسئلة', 'Questions')}</span>
                         <span className="font-semibold text-accent-700">{exam.questions?.length || 0}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>النجاح</span>
+                        <span>{t('النجاح', 'Pass')}</span>
                         <span className="font-semibold text-accent-700">{exam.passingScore}%</span>
                       </div>
                       {isStandalone && (
                         <div className="flex items-center justify-between">
-                          <span>السعر</span>
-                          <span className="font-semibold text-accent-700">{finalPrice > 0 ? `${finalPrice} ج.م` : 'مجاني'}</span>
+                          <span>{t('السعر', 'Price')}</span>
+                          <span className="font-semibold text-accent-700">{finalPrice > 0 ? `${finalPrice} ${t('ج.م', 'EGP')}` : t('مجاني', 'Free')}</span>
                         </div>
                       )}
                       {exam.course?.title && (
-                        <div className="pt-1 text-accent-600">الكورس: {exam.course.title}</div>
+                        <div className="pt-1 text-accent-600">{t('الكورس', 'Course')}: {exam.course.title}</div>
                       )}
                     </div>
 
@@ -159,7 +162,7 @@ export default function ExamsPage() {
                           onClick={() => handleStartExam(exam._id)}
                           className="flex-1 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-semibold"
                         >
-                          ابدأ الاختبار
+                          {t('ابدأ الاختبار', 'Start exam')}
                         </button>
                       ) : (
                         <button
@@ -167,7 +170,7 @@ export default function ExamsPage() {
                           disabled={payingExamId === exam._id}
                           className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold disabled:opacity-60"
                         >
-                          {payingExamId === exam._id ? 'جاري التحويل...' : 'شراء الاختبار'}
+                          {payingExamId === exam._id ? t('جاري التحويل...', 'Redirecting...') : t('شراء الاختبار', 'Purchase exam')}
                         </button>
                       )}
 
@@ -175,7 +178,7 @@ export default function ExamsPage() {
                         href={`/exams/${exam._id}/leaderboard`}
                         className="px-4 py-2 border border-accent-200 rounded-lg text-sm text-accent-700 hover:bg-accent-50"
                       >
-                        المتصدرون
+                        {t('المتصدرون', 'Leaderboard')}
                       </Link>
                     </div>
                   </div>
@@ -185,8 +188,8 @@ export default function ExamsPage() {
           ) : (
             <div className="text-center py-16 bg-white rounded-xl border border-accent-200">
               <span className="text-5xl mb-3 block">📝</span>
-              <h3 className="text-lg font-semibold text-accent-900 mb-2">لا توجد اختبارات متاحة حالياً</h3>
-              <p className="text-accent-600">تابعنا قريباً لإضافة اختبارات جديدة</p>
+              <h3 className="text-lg font-semibold text-accent-900 mb-2">{t('لا توجد اختبارات متاحة حالياً', 'No exams available right now')}</h3>
+              <p className="text-accent-600">{t('تابعنا قريباً لإضافة اختبارات جديدة', 'Check back soon for new exams')}</p>
             </div>
           )}
         </section>

@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import { useSession } from 'next-auth/react';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 export default function LeaderboardPage() {
   const { id } = useParams();
@@ -23,8 +25,8 @@ export default function LeaderboardPage() {
       if (data.success) {
         setLeaderboard(data.data.leaderboard);
       }
-    } catch (error) {
-      console.error('Failed to fetch leaderboard');
+    } catch {
+      toast.error(t('فشل تحميل قائمة المتصدرين', 'Failed to load leaderboard'));
     } finally {
       setLoading(false);
     }

@@ -5,6 +5,9 @@ import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { formatPrice } from '@/lib/utils';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 interface Course {
   _id: string;
@@ -23,6 +26,7 @@ interface Course {
 }
 
 export default function CoursesPage() {
+  useLang();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -58,43 +62,43 @@ export default function CoursesPage() {
         setCategories(data.data.filters?.categories || []);
         setLevels(data.data.filters?.levels || []);
       }
-    } catch (error) {
-      console.error('Failed to fetch courses:', error);
+    } catch {
+      toast.error(t('فشل تحميل الكورسات', 'Failed to load courses'));
     } finally {
       setLoading(false);
     }
   };
 
   const categoryLabels: Record<string, string> = {
-    Programming: 'البرمجة',
-    programming: 'البرمجة',
-    'Web Development': 'تطوير الويب',
-    web: 'تطوير الويب',
-    'Mobile Development': 'تطوير تطبيقات الهاتف',
-    mobile: 'تطوير تطبيقات الهاتف',
-    'Data Science': 'علوم البيانات',
-    data: 'علوم البيانات',
-    'AI & ML': 'الذكاء الاصطناعي وتعلم الآلة',
-    ai: 'الذكاء الاصطناعي وتعلم الآلة',
-    Cybersecurity: 'الأمن السيبراني',
-    cybersecurity: 'الأمن السيبراني',
-    Design: 'التصميم',
-    design: 'التصميم',
-    Business: 'الأعمال',
-    business: 'الأعمال',
-    Marketing: 'التسويق',
-    marketing: 'التسويق',
-    science: 'العلوم',
-    language: 'اللغات',
-    languages: 'اللغات',
-    Other: 'أخرى',
-    other: 'أخرى',
+    Programming: t('البرمجة', 'Programming'),
+    programming: t('البرمجة', 'Programming'),
+    'Web Development': t('تطوير الويب', 'Web Development'),
+    web: t('تطوير الويب', 'Web Development'),
+    'Mobile Development': t('تطوير تطبيقات الهاتف', 'Mobile Development'),
+    mobile: t('تطوير تطبيقات الهاتف', 'Mobile Development'),
+    'Data Science': t('علوم البيانات', 'Data Science'),
+    data: t('علوم البيانات', 'Data Science'),
+    'AI & ML': t('الذكاء الاصطناعي وتعلم الآلة', 'AI & ML'),
+    ai: t('الذكاء الاصطناعي وتعلم الآلة', 'AI & ML'),
+    Cybersecurity: t('الأمن السيبراني', 'Cybersecurity'),
+    cybersecurity: t('الأمن السيبراني', 'Cybersecurity'),
+    Design: t('التصميم', 'Design'),
+    design: t('التصميم', 'Design'),
+    Business: t('الأعمال', 'Business'),
+    business: t('الأعمال', 'Business'),
+    Marketing: t('التسويق', 'Marketing'),
+    marketing: t('التسويق', 'Marketing'),
+    science: t('العلوم', 'Science'),
+    language: t('اللغات', 'Languages'),
+    languages: t('اللغات', 'Languages'),
+    Other: t('أخرى', 'Other'),
+    other: t('أخرى', 'Other'),
   };
 
   const levelLabels: Record<string, string> = {
-    beginner: 'مبتدئ',
-    intermediate: 'متوسط',
-    advanced: 'متقدم',
+    beginner: t('مبتدئ', 'Beginner'),
+    intermediate: t('متوسط', 'Intermediate'),
+    advanced: t('متقدم', 'Advanced'),
   };
 
   const categoryLabel = (value: string) => categoryLabels[value] || value;
@@ -106,8 +110,8 @@ export default function CoursesPage() {
         {/* Header */}
         <div className="bg-white border-b border-accent-200 shadow-soft">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-            <h1 className="text-4xl font-bold text-accent-900 mb-2">الكورسات</h1>
-            <p className="text-accent-600 text-lg">اختر من مئات الكورسات وابدأ رحلتك التعليمية</p>
+            <h1 className="text-4xl font-bold text-accent-900 mb-2">{t('الكورسات', 'Courses')}</h1>
+            <p className="text-accent-600 text-lg">{t('اختر من مئات الكورسات وابدأ رحلتك التعليمية', 'Choose from hundreds of courses and start your learning journey')}</p>
           </div>
         </div>
 
@@ -122,7 +126,7 @@ export default function CoursesPage() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="ابحث عن كورس..."
+                  placeholder={t('ابحث عن كورس...', 'Search for a course...')}
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPage(1); }}
                   className="w-full pr-10 pl-4 py-2.5 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
@@ -135,7 +139,7 @@ export default function CoursesPage() {
                 onChange={e => { setCategory(e.target.value); setPage(1); }}
                 className="px-4 py-2.5 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
               >
-                <option value="">كل التصنيفات</option>
+                <option value="">{t('كل التصنيفات', 'All categories')}</option>
                 {categories.map(c => (
                   <option key={c} value={c}>{categoryLabel(c)}</option>
                 ))}
@@ -147,7 +151,7 @@ export default function CoursesPage() {
                 onChange={e => { setLevel(e.target.value); setPage(1); }}
                 className="px-4 py-2.5 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
               >
-                <option value="">كل المستويات</option>
+                <option value="">{t('كل المستويات', 'All levels')}</option>
                 {levels.map(l => (
                   <option key={l} value={l}>{levelLabels[l] || l}</option>
                 ))}
@@ -159,12 +163,12 @@ export default function CoursesPage() {
                 onChange={e => { setSort(e.target.value); setPage(1); }}
                 className="px-4 py-2.5 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none bg-white"
               >
-                <option value="">الترتيب الافتراضي</option>
-                <option value="newest">الأحدث</option>
-                <option value="popular">الأكثر شعبية</option>
-                <option value="rating">الأعلى تقييماً</option>
-                <option value="price-low">السعر: من الأقل للأعلى</option>
-                <option value="price-high">السعر: من الأعلى للأقل</option>
+                <option value="">{t('الترتيب الافتراضي', 'Default sort')}</option>
+                <option value="newest">{t('الأحدث', 'Newest')}</option>
+                <option value="popular">{t('الأكثر شعبية', 'Most popular')}</option>
+                <option value="rating">{t('الأعلى تقييماً', 'Highest rated')}</option>
+                <option value="price-low">{t('السعر: من الأقل للأعلى', 'Price: low to high')}</option>
+                <option value="price-high">{t('السعر: من الأعلى للأقل', 'Price: high to low')}</option>
               </select>
             </div>
           </div>
@@ -186,8 +190,8 @@ export default function CoursesPage() {
           ) : courses.length === 0 ? (
             <div className="text-center py-20">
               <div className="text-7xl mb-6">📚</div>
-              <h3 className="text-2xl font-bold text-accent-900 mb-2">لم نجد كورسات</h3>
-              <p className="text-accent-600 text-lg">حاول تغيير معايير البحث</p>
+              <h3 className="text-2xl font-bold text-accent-900 mb-2">{t('لم نجد كورسات', 'No courses found')}</h3>
+              <p className="text-accent-600 text-lg">{t('حاول تغيير معايير البحث', 'Try changing your search filters')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -267,7 +271,7 @@ export default function CoursesPage() {
                           </span>
                         </>
                       ) : course.price === 0 ? (
-                        <span className="text-success-600">مجاني 🎁</span>
+                        <span className="text-success-600">{t('مجاني 🎁', 'Free 🎁')}</span>
                       ) : (
                         <span className="text-accent-900">
                           {formatPrice(course.price)}
@@ -288,7 +292,7 @@ export default function CoursesPage() {
                 disabled={page === 1}
                 className="px-4 py-2 border border-accent-200 rounded-lg disabled:opacity-50 hover:bg-accent-50 transition-colors"
               >
-                ← السابق
+                ← {t('السابق', 'Previous')}
               </button>
               {Array.from({ length: totalPages }).map((_, i) => (
                 <button
@@ -308,7 +312,7 @@ export default function CoursesPage() {
                 disabled={page === totalPages}
                 className="px-4 py-2 border border-accent-200 rounded-lg disabled:opacity-50 hover:bg-accent-50 transition-colors"
               >
-                التالي →
+                {t('التالي', 'Next')} →
               </button>
             </div>
           )}

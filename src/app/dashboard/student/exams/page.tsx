@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const studentLinks = [
   { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
@@ -31,8 +33,8 @@ export default function StudentExamsPage() {
       const res = await fetch('/api/exams?myAttempts=true');
       const data = await res.json();
       if (data.success) setAttempts(data.data.attempts || []);
-    } catch (error) {
-      console.error('Failed to fetch attempts');
+    } catch {
+      toast.error(t('فشل تحميل الاختبارات', 'Failed to load exams'));
     } finally {
       setLoading(false);
     }

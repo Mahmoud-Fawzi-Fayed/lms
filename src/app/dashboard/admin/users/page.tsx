@@ -5,6 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { t } from '@/lib/i18n';
 
 const adminLinks = [
   { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
@@ -42,8 +44,8 @@ export default function AdminUsersPage() {
         setUsers(data.data.users);
         setTotalPages(data.data.pagination?.pages || 1);
       }
-    } catch (error) {
-      console.error('Failed to fetch users');
+    } catch {
+      toast.error(t('فشل تحميل المستخدمين', 'Failed to load users'));
     } finally {
       setLoading(false);
     }
@@ -56,9 +58,10 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, isActive: !isActive }),
       });
-      if (res.ok) fetchUsers();
-    } catch (error) {
-      console.error('Failed to update user');
+      if (res.ok) { fetchUsers(); }
+      else { const d = await res.json(); toast.error(d.error || t('فشل تحديث الحالة', 'Failed to update status')); }
+    } catch {
+      toast.error(t('خطأ في الاتصال', 'Network error'));
     }
   };
 
@@ -69,9 +72,10 @@ export default function AdminUsersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, role }),
       });
-      if (res.ok) fetchUsers();
-    } catch (error) {
-      console.error('Failed to update role');
+      if (res.ok) { fetchUsers(); toast.success(t('تم تحديث الدور', 'Role updated')); }
+      else { const d = await res.json(); toast.error(d.error || t('فشل تحديث الدور', 'Failed to update role')); }
+    } catch {
+      toast.error(t('خطأ في الاتصال', 'Network error'));
     }
   };
 

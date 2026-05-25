@@ -13,7 +13,8 @@ function buildPendingPaymentResponse(paymentToken: string, iframeId: string) {
 
 // POST /api/payments/exams/initiate - Start standalone exam payment flow
 export const POST = withAuth(async (req, user) => {
-  const body = await req.json();
+  let body: any;
+  try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
   const parsed = initiateExamPaymentSchema.safeParse(body);
 
   if (!parsed.success) {

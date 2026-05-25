@@ -1,4 +1,4 @@
-import { withAuth, apiSuccess } from '@/lib/api-helpers';
+import { withAuth, apiSuccess, escapeRegex } from '@/lib/api-helpers';
 import { Course } from '@/models';
 
 // GET /api/admin/courses - List all courses for admin (including drafts)
@@ -12,9 +12,11 @@ export const GET = withAuth(async (req) => {
   const filter: Record<string, any> = {};
 
   if (search) {
+    // Escape regex metachars to block NoSQL regex injection / ReDoS, cap length.
+    const safe = escapeRegex(search.slice(0, 80));
     filter.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { category: { $regex: search, $options: 'i' } },
+      { title: { $regex: safe, $options: 'i' } },
+      { category: { $regex: safe, $options: 'i' } },
     ];
   }
 

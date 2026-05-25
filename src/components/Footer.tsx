@@ -1,4 +1,8 @@
+'use client';
+
 import Link from 'next/link';
+import { useLang } from '@/contexts/LanguageContext';
+import { t } from '@/lib/i18n';
 
 function LogoIcon() {
   return (
@@ -9,6 +13,8 @@ function LogoIcon() {
 }
 
 export default function Footer() {
+  // Subscribe to language changes so the rendered strings flip immediately on toggle.
+  useLang();
   return (
     <footer className="bg-accent-900 text-accent-100 animate-fade-in">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
@@ -20,49 +26,52 @@ export default function Footer() {
                 <LogoIcon />
               </div>
               <span className="font-bold text-base text-white">
-                أ/<span className="text-primary-400"> محمد الصباغ</span>
+                {t('أ/', 'Mr.')}<span className="text-primary-400">{t(' محمد الصباغ', ' Mohamed Elsabbagh')}</span>
               </span>
             </div>
             <p className="text-sm text-accent-300 leading-relaxed">
-              منصة تعليمية حديثة توفر محتوى عالي الجودة وتجربة تعلّم استثنائية.
+              {t(
+                'منصة تعليمية حديثة توفر محتوى عالي الجودة وتجربة تعلّم استثنائية.',
+                'A modern learning platform offering high-quality content and an exceptional learning experience.'
+              )}
             </p>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h3 className="font-semibold text-white mb-4 text-sm">روابط سريعة</h3>
+            <h3 className="font-semibold text-white mb-4 text-sm">{t('روابط سريعة', 'Quick Links')}</h3>
             <ul className="space-y-3">
-              <li><Link href="/" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">الرئيسية</Link></li>
-              <li><Link href="/courses" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">الكورسات</Link></li>
-              <li><Link href="/dashboard/student/exams" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">الامتحانات</Link></li>
-              <li><Link href="/register" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">إنشاء حساب</Link></li>
-              <li><Link href="/login" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">تسجيل الدخول</Link></li>
+              <li><Link href="/" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('الرئيسية', 'Home')}</Link></li>
+              <li><Link href="/courses" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('الكورسات', 'Courses')}</Link></li>
+              <li><Link href="/dashboard/student/exams" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('الامتحانات', 'Exams')}</Link></li>
+              <li><Link href="/register" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('إنشاء حساب', 'Sign Up')}</Link></li>
+              <li><Link href="/login" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('تسجيل الدخول', 'Sign In')}</Link></li>
             </ul>
           </div>
 
           {/* Support */}
           <div>
-            <h3 className="font-semibold text-white mb-4 text-sm">المساعدة</h3>
+            <h3 className="font-semibold text-white mb-4 text-sm">{t('المساعدة', 'Support')}</h3>
             <ul className="space-y-3">
-              <li><Link href="/faq" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">الأسئلة الشائعة</Link></li>
-              <li><Link href="/privacy" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">سياسة الخصوصية</Link></li>
-              <li><Link href="/terms" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">شروط الاستخدام</Link></li>
+              <li><Link href="/faq" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('الأسئلة الشائعة', 'FAQ')}</Link></li>
+              <li><Link href="/privacy" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('سياسة الخصوصية', 'Privacy Policy')}</Link></li>
+              <li><Link href="/terms" className="text-sm text-accent-300 hover:text-primary-400 transition-colors">{t('شروط الاستخدام', 'Terms of Use')}</Link></li>
             </ul>
           </div>
 
           {/* Contact */}
           <div>
-            <h3 className="font-semibold text-white mb-4 text-sm">تواصل معنا</h3>
+            <h3 className="font-semibold text-white mb-4 text-sm">{t('تواصل معنا', 'Contact Us')}</h3>
             <ul className="space-y-3">
               <li className="text-sm text-accent-300">📧 info@alsabbagh.com</li>
               <li className="text-sm text-accent-300">📱 +20 100 000 0000</li>
-              <li className="text-sm text-accent-300">📍 مصر</li>
+              <li className="text-sm text-accent-300">📍 {t('مصر', 'Egypt')}</li>
             </ul>
           </div>
         </div>
 
         <div className="border-t border-accent-800 pt-6 md:pt-8 text-center text-sm text-accent-400">
-          © {new Date().getFullYear()} أ/ محمد الصباغ. جميع الحقوق محفوظة.
+          © {new Date().getFullYear()} {t('أ/ محمد الصباغ. جميع الحقوق محفوظة.', 'Mr. Mohamed Elsabbagh. All rights reserved.')}
         </div>
       </div>
     </footer>

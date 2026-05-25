@@ -1,6 +1,6 @@
 ﻿import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
-const BASE = 'http://localhost:3000';
+const BASE = 'http://localhost:3003';
 const MONGO_URI = 'mongodb://localhost:27017/lms_0xray';
 let passed = 0, failed = 0;
 const failures = [];
@@ -137,7 +137,7 @@ async function main() {
         answers:qs.map(q=>({questionId:q._id,selectedOption:q.options?.[0]?._id||q.options?.[0]?.text})),
       },sc);
       test('Submit exam', r.status===200, `${r.status} ${JSON.stringify(r.json).slice(0,300)}`);
-      r = await api('GET',`/api/exams/${eid}/leaderboard`);
+      r = await api('GET',`/api/exams/${eid}/leaderboard`,null,sc);
       test('Leaderboard', r.status===200, `${r.status} ${JSON.stringify(r.json).slice(0,200)}`);
     } else console.log(`  âš ï¸ Skip submit (aid=${aid} qs=${qs.length})`);
     r = await api('PUT',`/api/exams/${eid}`,{title:'Ø§Ø®ØªØ¨Ø§Ø± Ù…Ø­Ø¯Ø«'},ic);
@@ -165,7 +165,7 @@ async function main() {
   console.log('\nðŸ” Content Token...');
   if(fcid) {
     r = await api('GET',`/api/courses/${fcid}/content-token?lessonId=test123`,null,sc);
-    test('Content token', r.status===200 || r.status===400, `${r.status} ${JSON.stringify(r.json).slice(0,200)}`);
+    test('Content token (404 fake lesson)', [200,400,404].includes(r.status), `${r.status} ${JSON.stringify(r.json).slice(0,200)}`);
   }
 
   console.log('\nðŸ”’ Validation...');
