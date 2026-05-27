@@ -427,9 +427,9 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">{t('صورة الغلاف', 'Cover Image')}</label>
             <div className="flex items-center gap-4">
-              <div className="w-32 h-20 rounded-xl overflow-hidden bg-gradient-to-bl from-blue-400 to-purple-500 flex items-center justify-center flex-shrink-0">
+              <div className="relative w-32 h-20 rounded-xl overflow-hidden bg-gradient-to-bl from-blue-400 to-purple-500 flex items-center justify-center flex-shrink-0">
                 {form.thumbnail ? (
-                  <Image src={form.thumbnail} alt="thumbnail" fill className="object-cover" unoptimized />
+                  <Image src={form.thumbnail} alt="thumbnail" width={128} height={80} className="w-full h-full object-cover" unoptimized />
                 ) : (
                   <span className="text-3xl">📚</span>
                 )}

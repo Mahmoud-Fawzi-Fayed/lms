@@ -253,10 +253,27 @@ export async function GET(
       return apiError('ملف المحتوى غير موجود – يرجى رفع الملف أولاً', 404);
     }
 
-    // Path traversal guard: ensure lessonFilePath resolves within the uploads directory
+    // Path traversal guard: ensure lessonFilePath resolves within the uploads directory.
+    // Also remap legacy absolute paths (e.g. /var/www/lms/uploads/...) to the current
+    // runtime uploads directory so old content remains accessible after deployment moves.
     const uploadsDir = path.resolve(process.cwd(), 'uploads');
-    const resolvedFilePath = path.resolve(lessonFilePath);
-    if (!resolvedFilePath.startsWith(uploadsDir + path.sep) && resolvedFilePath !== uploadsDir) {
+    let resolvedFilePath = path.resolve(lessonFilePath);
+    const inUploads = (p: string) => p === uploadsDir || p.startsWith(uploadsDir + path.sep);
+
+    if (!inUploads(resolvedFilePath)) {
+      const normalized = lessonFilePath.replace(/\\/g, '/');
+      const marker = '/uploads/';
+      const markerIndex = normalized.lastIndexOf(marker);
+      if (markerIndex !== -1) {
+        const relativeToUploads = normalized.slice(markerIndex + marker.length);
+        const remapped = path.resolve(uploadsDir, relativeToUploads);
+        if (inUploads(remapped)) {
+          resolvedFilePath = remapped;
+        }
+      }
+    }
+
+    if (!inUploads(resolvedFilePath)) {
       console.error('[content] path traversal attempt blocked. filePath:', lessonFilePath);
       return apiError('مسار الملف غير صالح', 403);
     }
