@@ -37,7 +37,7 @@ export async function GET(
     const kind: TokenKind = kindParam === 'stream' ? 'stream' : 'raw';
 
     const course = await Course.findById(params.id)
-      .select('targetYear instructor modules.lessons._id modules.lessons.isPreview modules.lessons.type')
+      .select('targetYear instructor modules.lessons._id modules.lessons.isPreview modules.lessons.type +modules.lessons.filePath')
       .lean();
     if (!course) return apiError('الكورس غير موجود', 404);
 
@@ -48,12 +48,14 @@ export async function GET(
     let lessonExists = false;
     let isPreviewLesson = false;
     let lessonType: string | undefined;
+    let lessonHasFile = false;
     for (const mod of (course as any).modules || []) {
       const lesson = (mod.lessons || []).find((l: any) => l._id?.toString() === lessonId);
       if (lesson) {
         lessonExists   = true;
         isPreviewLesson = Boolean(lesson.isPreview);
         lessonType     = lesson.type;
+        lessonHasFile  = Boolean(lesson.filePath);
         break;
       }
     }
@@ -67,6 +69,12 @@ export async function GET(
     }
     if (kind === 'stream' && lessonType === 'pdf') {
       return apiError('نوع الرابط غير متطابق مع نوع الدرس', 400);
+    }
+
+    // If a media lesson has no uploaded file yet, return a clear actionable error.
+    // This prevents the UI from opening an empty player/viewer state.
+    if ((lessonType === 'video' || lessonType === 'pdf') && !lessonHasFile) {
+      return apiError('لم يتم رفع ملف هذا الدرس بعد', 409);
     }
 
     const fp = fingerprintFromRequest(req);

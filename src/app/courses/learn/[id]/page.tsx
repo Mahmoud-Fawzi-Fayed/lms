@@ -25,6 +25,7 @@ export default function CourseLearnPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [contentUrl, setContentUrl] = useState('');
+  const [contentError, setContentError] = useState('');
   const [courseExam, setCourseExam] = useState<any>(null);
 
   useEffect(() => {
@@ -79,6 +80,11 @@ export default function CourseLearnPage() {
   };
 
   const loadContent = async (courseId: string, lessonId: string, lessonType?: string) => {
+    setContentError('');
+    setContentUrl('');
+
+    if (lessonType === 'text') return;
+
     try {
       const kind = lessonType === 'video' ? 'stream' : 'raw';
       const res = await fetch(`/api/courses/${courseId}/content-token?lessonId=${lessonId}&kind=${kind}`);
@@ -88,9 +94,11 @@ export default function CourseLearnPage() {
         // PDFs/text use mode=raw (requires X-Content-Request header from JS fetch).
         const mode = lessonType === 'video' ? 'stream' : 'raw';
         setContentUrl(`/api/content/${data.data.token}?mode=${mode}`);
+        return;
       }
+      setContentError(data.error || t('هذا الدرس لا يحتوي ملفًا مرفوعًا بعد', 'This lesson has no uploaded file yet'));
     } catch {
-      toast.error(t('تعذر تحميل المحتوى', 'Content failed to load'));
+      setContentError(t('تعذر تحميل المحتوى', 'Content failed to load'));
     }
   };
 
@@ -317,8 +325,22 @@ export default function CourseLearnPage() {
               />
             )}
 
+            {activeLesson?.type === 'video' && !contentUrl && (
+              <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm p-8 text-center text-slate-600">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا يوجد فيديو مرفوع لهذا الدرس بعد', 'No video has been uploaded for this lesson yet')}</h3>
+                <p>{contentError || t('يرجى المحاولة لاحقًا أو التواصل مع المدرس', 'Please try again later or contact the instructor')}</p>
+              </div>
+            )}
+
             {activeLesson?.type === 'pdf' && contentUrl && (
               <SecurePdfViewer src={contentUrl} title={activeLesson.title} />
+            )}
+
+            {activeLesson?.type === 'pdf' && !contentUrl && (
+              <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm p-8 text-center text-slate-600">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا يوجد ملف PDF مرفوع لهذا الدرس بعد', 'No PDF has been uploaded for this lesson yet')}</h3>
+                <p>{contentError || t('يرجى المحاولة لاحقًا أو التواصل مع المدرس', 'Please try again later or contact the instructor')}</p>
+              </div>
             )}
 
             {activeLesson?.type === 'text' && (

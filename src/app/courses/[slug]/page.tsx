@@ -12,17 +12,14 @@ import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { formatPrice, formatDuration } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-import { useLang } from '@/contexts/LanguageContext';
 
 export default function CourseDetailPage() {
   const { slug } = useParams();
   const { data: session } = useSession();
-  useLang();
   const router = useRouter();
 
   const [course, setCourse] = useState<any>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
-  const [enrollment, setEnrollment] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
@@ -40,7 +37,6 @@ export default function CourseDetailPage() {
       if (data.success) {
         setCourse(data.data.course);
         setIsEnrolled(data.data.isEnrolled);
-        setEnrollment(data.data.enrollment || null);
         fetchCourseExams(data.data.course._id);
       } else {
         toast.error(data.error || t('تعذر تحميل الكورس', 'Failed to load course'));
@@ -184,8 +180,8 @@ export default function CourseDetailPage() {
         <Navbar />
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">{t('الكورس غير موجود', 'Course not found')}</h2>
-            <Link href="/courses" className="text-blue-600 hover:underline">{t('العودة للكورسات', 'Back to Courses')}</Link>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">الكورس غير موجود</h2>
+            <Link href="/courses" className="text-blue-600 hover:underline">العودة للكورسات</Link>
           </div>
         </div>
       </>
@@ -225,7 +221,7 @@ export default function CourseDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
               <div className="lg:col-span-2">
                 <div className="flex items-center gap-2 text-sm mb-4">
-                  <Link href="/courses" className="text-slate-400 hover:text-white">{t('الكورسات', 'Courses')}</Link>
+                  <Link href="/courses" className="text-slate-400 hover:text-white">الكورسات</Link>
                   <span className="text-slate-600">/</span>
                   <span className="text-blue-400">{course.category}</span>
                 </div>
@@ -237,13 +233,13 @@ export default function CourseDetailPage() {
                     <div className="flex items-center gap-1">
                       <span className="text-yellow-400 font-bold">{course.rating.toFixed(1)}</span>
                       <span className="text-yellow-400">★</span>
-                      <span className="text-slate-400">({course.ratingCount} {t('تقييم', 'ratings')})</span>
+                      <span className="text-slate-400">({course.ratingCount} تقييم)</span>
                     </div>
                   )}
-                  <span className="text-slate-400">{course.enrollmentCount} {t('طالب', 'students')}</span>
-                  <span className="text-slate-400">{t('بواسطة', 'by')} {course.instructor?.name}</span>
+                  <span className="text-slate-400">{course.enrollmentCount} طالب</span>
+                  <span className="text-slate-400">بواسطة {course.instructor?.name}</span>
                   <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded">
-                    {course.level === 'beginner' ? t('مبتدئ', 'Beginner') : course.level === 'intermediate' ? t('متوسط', 'Intermediate') : t('متقدم', 'Advanced')}
+                    {course.level === 'beginner' ? 'مبتدئ' : course.level === 'intermediate' ? 'متوسط' : 'متقدم'}
                   </span>
                 </div>
               </div>
@@ -253,7 +249,7 @@ export default function CourseDetailPage() {
                 {/* Price */}
                 <div className="mb-4">
                   {finalPrice === 0 ? (
-                    <div className="text-3xl font-bold text-green-600">{t('مجاني', 'Free')}</div>
+                    <div className="text-3xl font-bold text-green-600">مجاني</div>
                   ) : (
                     <div className="flex items-center gap-3">
                       <span className="text-3xl font-bold">{formatPrice(finalPrice)}</span>
@@ -266,56 +262,21 @@ export default function CourseDetailPage() {
                   )}
                 </div>
 
-                {isEnrolled ? (() => {
-                  const totalLessons = (course.modules || []).reduce(
-                    (acc: number, m: any) => acc + ((m.lessons || []).length), 0
-                  );
-                  const completedCount = enrollment?.progress?.completedLessons?.length || 0;
-                  const percentage = enrollment?.progress?.percentage
-                    ?? (totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0);
-                  const isComplete = totalLessons > 0 && completedCount >= totalLessons;
-                  const isStarted = completedCount > 0;
-
-                  return (
-                    <div className="mb-4">
-                      {isStarted && (
-                        <div className="mb-3">
-                          <div className="flex justify-between text-sm text-gray-600 mb-1">
-                            <span>{t('تقدّمُك', 'Your progress')}</span>
-                            <span className="font-semibold">{percentage}%</span>
-                          </div>
-                          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all ${isComplete ? 'bg-green-600' : 'bg-blue-600'}`}
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      <Link
-                        href={`/courses/learn/${course._id}`}
-                        className={`block w-full py-3 font-semibold rounded-xl text-center transition-colors text-white ${
-                          isComplete
-                            ? 'bg-emerald-600 hover:bg-emerald-700'
-                            : 'bg-green-600 hover:bg-green-700'
-                        }`}
-                      >
-                        {isComplete
-                          ? t('✓ اكتمل — أعد المراجعة', '✓ Completed — Review again')
-                          : isStarted
-                            ? t(`متابعة التعلم (${percentage}%)`, `Continue learning (${percentage}%)`)
-                            : t('ابدأ التعلم', 'Start learning')}
-                      </Link>
-                    </div>
-                  );
-                })() : (
+                {isEnrolled ? (
+                  <Link
+                    href={`/courses/learn/${course._id}`}
+                    className="block w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl text-center transition-colors mb-4"
+                  >
+                    متابعة التعلم
+                  </Link>
+                ) : (
                   <div className="space-y-3 mb-4">
                     <button
                       onClick={() => handleEnroll('card')}
                       disabled={paymentLoading}
                       className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50"
                     >
-                      {paymentLoading ? t('جاري المعالجة...', 'Processing...') : finalPrice === 0 ? t('سجّل مجاناً', 'Enroll Free') : t('ادفع بالبطاقة', 'Pay by card')}
+                      {paymentLoading ? 'جاري المعالجة...' : finalPrice === 0 ? 'سجّل مجاناً' : 'ادفع بالبطاقة'}
                     </button>
                     {finalPrice > 0 && (
                       <>
@@ -324,14 +285,14 @@ export default function CourseDetailPage() {
                           disabled={paymentLoading}
                           className="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-xl transition-colors disabled:opacity-50"
                         >
-                          {t('ادفع عبر فوري', 'Pay via Fawry')}
+                          ادفع عبر فوري
                         </button>
                         <button
                           onClick={() => handleEnroll('wallet')}
                           disabled={paymentLoading}
                           className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50"
                         >
-                          {t('محفظة إلكترونية', 'E-Wallet')}
+                          محفظة إلكترونية
                         </button>
                       </>
                     )}
@@ -341,20 +302,20 @@ export default function CourseDetailPage() {
                 {/* Course Info */}
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between py-2 border-b border-slate-100">
-                    <span className="text-slate-600">{t('الدروس', 'Lessons')}</span>
+                    <span className="text-slate-600">الدروس</span>
                     <span className="font-medium">{totalLessons}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-slate-100">
-                    <span className="text-slate-600">{t('المدة', 'Duration')}</span>
+                    <span className="text-slate-600">المدة</span>
                     <span className="font-medium">{formatDuration(totalDuration)}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b border-slate-100">
-                    <span className="text-slate-600">{t('المستوى', 'Level')}</span>
-                    <span className="font-medium">{course.level === 'beginner' ? t('مبتدئ', 'Beginner') : course.level === 'intermediate' ? t('متوسط', 'Intermediate') : t('متقدم', 'Advanced')}</span>
+                    <span className="text-slate-600">المستوى</span>
+                    <span className="font-medium">{course.level === 'beginner' ? 'مبتدئ' : course.level === 'intermediate' ? 'متوسط' : 'متقدم'}</span>
                   </div>
                   <div className="flex justify-between py-2">
-                    <span className="text-slate-600">{t('اللغة', 'Language')}</span>
-                    <span className="font-medium">{course.language === 'ar' ? t('العربية', 'Arabic') : t('الإنجليزية', 'English')}</span>
+                    <span className="text-slate-600">اللغة</span>
+                    <span className="font-medium">{course.language === 'ar' ? 'العربية' : 'الإنجليزية'}</span>
                   </div>
                 </div>
               </div>
@@ -367,9 +328,9 @@ export default function CourseDetailPage() {
           {/* Tabs */}
           <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit mb-8">
             {[
-              { key: 'overview', label: t('نظرة عامة', 'Overview') },
-              { key: 'curriculum', label: t('المنهج', 'Curriculum') },
-              ...(courseExams.length > 0 ? [{ key: 'exams', label: t('الاختبارات', 'Exams') }] : []),
+              { key: 'overview', label: 'نظرة عامة' },
+              { key: 'curriculum', label: 'المنهج' },
+              ...(courseExams.length > 0 ? [{ key: 'exams', label: 'الاختبارات' }] : []),
             ].map(tab => (
               <button
                 key={tab.key}
@@ -391,7 +352,7 @@ export default function CourseDetailPage() {
                 {/* What You'll Learn */}
                 {course.whatYouLearn?.length > 0 && (
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">{t('ماذا ستتعلم', 'What you\'ll learn')}</h2>
+                    <h2 className="text-xl font-bold text-slate-900 mb-4">ماذا ستتعلم</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {course.whatYouLearn.map((item: string, i: number) => (
                         <div key={i} className="flex items-start gap-2">
@@ -407,7 +368,7 @@ export default function CourseDetailPage() {
 
                 {/* Description */}
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900 mb-4">{t('الوصف', 'Description')}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 mb-4">الوصف</h2>
                   <div className="prose prose-slate max-w-none text-slate-700 whitespace-pre-line">
                     {course.description}
                   </div>
@@ -416,7 +377,7 @@ export default function CourseDetailPage() {
                 {/* Requirements */}
                 {course.requirements?.length > 0 && (
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">{t('المتطلبات', 'Requirements')}</h2>
+                    <h2 className="text-xl font-bold text-slate-900 mb-4">المتطلبات</h2>
                     <ul className="list-disc list-inside space-y-2 text-slate-700">
                       {course.requirements.map((req: string, i: number) => (
                         <li key={i}>{req}</li>
@@ -431,7 +392,7 @@ export default function CourseDetailPage() {
           {activeTab === 'curriculum' && (
             <div className="max-w-3xl">
               <h2 className="text-xl font-bold text-slate-900 mb-6">
-                {t('المنهج الدراسي', 'Curriculum')} ({totalLessons} {t('درس', 'lessons')})
+                المنهج الدراسي ({totalLessons} درس)
               </h2>
               <div className="space-y-4">
                 {course.modules?.map((mod: any, mi: number) => (
@@ -441,7 +402,7 @@ export default function CourseDetailPage() {
                         {mod.title}
                       </h3>
                       <span className="text-sm text-slate-500">
-                        {mod.lessons?.length || 0} {t('درس', 'lessons')}
+                        {mod.lessons?.length || 0} درس
                       </span>
                     </div>
                     <div className="divide-y">
@@ -468,9 +429,9 @@ export default function CourseDetailPage() {
                                   handlePreviewLesson(lesson._id);
                                 }}
                                 className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-0.5 rounded-full transition-colors"
-                                title={t('فتح المعاينة', 'Open preview')}
+                                title="فتح المعاينة"
                               >
-                                {t('معاينة', 'Preview')}
+                                معاينة
                               </button>
                             )}
                           </div>
@@ -491,7 +452,7 @@ export default function CourseDetailPage() {
           {activeTab === 'exams' && courseExams.length > 0 && (
             <div className="max-w-3xl">
               <h2 className="text-xl font-bold text-slate-900 mb-6">
-                {t('اختبارات الكورس', 'Course Exams')} ({courseExams.length} {t('اختبار', 'exams')})
+                اختبارات الكورس ({courseExams.length} اختبار)
               </h2>
               <div className="space-y-4">
                 {courseExams.map((exam: any) => (
@@ -502,7 +463,7 @@ export default function CourseDetailPage() {
                           <h3 className="font-semibold text-slate-900">{exam.title}</h3>
                           {exam.isPreview && (
                             <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                              {t('معاينة مجانية', 'Free preview')}
+                              معاينة مجانية
                             </span>
                           )}
                         </div>
@@ -511,16 +472,16 @@ export default function CourseDetailPage() {
                         )}
                         <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
                           <span className="flex items-center gap-1">
-                            📝 {exam.questions?.length || 0} {t('سؤال', 'questions')}
+                            📝 {exam.questions?.length || 0} سؤال
                           </span>
                           <span className="flex items-center gap-1">
-                            ⏱️ {exam.duration} {t('دقيقة', 'min')}
+                            ⏱️ {exam.duration} دقيقة
                           </span>
                           <span className="flex items-center gap-1">
-                            🎯 {t('درجة النجاح:', 'Passing score:')} {exam.passingScore}%
+                            🎯 درجة النجاح: {exam.passingScore}%
                           </span>
                           <span className="flex items-center gap-1">
-                            🔄 {exam.maxAttempts} {t('محاولة', 'attempts')}
+                            🔄 {exam.maxAttempts} محاولة
                           </span>
                         </div>
                       </div>
@@ -530,11 +491,11 @@ export default function CourseDetailPage() {
                             href={`/exams/take/${exam._id}`}
                             className="inline-block px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors whitespace-nowrap"
                           >
-                            {t('ابدأ الاختبار', 'Start Exam')}
+                            ابدأ الاختبار
                           </Link>
                         ) : (
                           <span className="inline-block px-4 py-2 bg-slate-100 text-slate-500 text-sm rounded-xl whitespace-nowrap">
-                            🔒 {t('سجّل أولاً', 'Enroll first')}
+                            🔒 سجّل أولاً
                           </span>
                         )}
                       </div>
@@ -558,7 +519,7 @@ export default function CourseDetailPage() {
             <button
               onClick={closePreview}
               className="absolute top-4 left-4 z-50 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 text-white text-xl flex items-center justify-center transition-colors"
-              title={t('إغلاق', 'Close')}
+              title="إغلاق"
             >
               ✕
             </button>
@@ -619,7 +580,7 @@ export default function CourseDetailPage() {
                   <h2 className="text-xl font-bold text-slate-900 mb-4 border-b pb-3">{previewModal.title}</h2>
                   <div
                     className="prose prose-slate max-w-none text-slate-700 leading-loose"
-                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewModal.textContent || `<p>${t('لا يوجد محتوى لهذا الدرس', 'No content for this lesson')}</p>`) }}
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewModal.textContent || '<p>لا يوجد محتوى لهذا الدرس</p>') }}
                   />
                 </div>
               )}
