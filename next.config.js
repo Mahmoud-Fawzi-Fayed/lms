@@ -19,11 +19,6 @@ const nextConfig = {
         { key: 'X-Content-Type-Options', value: 'nosniff' },
         { key: 'X-XSS-Protection', value: '1; mode=block' },
         { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-        // HSTS — enforce HTTPS once the site is loaded over HTTPS.
-        // Active only in production builds where the site is expected to be HTTPS.
-        ...(process.env.NODE_ENV === 'production'
-          ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' }]
-          : []),
         {
           key: 'Content-Security-Policy',
           value: [
