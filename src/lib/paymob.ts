@@ -159,7 +159,10 @@ export function verifyWebhookHmac(
   receivedHmac: string
 ): boolean {
   try {
-    const config = getConfig();
+    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+    if (!hmacSecret) {
+      throw new Error('PAYMOB_HMAC_SECRET is missing');
+    }
 
     // Paymob HMAC verification - concatenate specific fields in order
   const hmacFields = [
@@ -197,7 +200,7 @@ export function verifyWebhookHmac(
     .join('');
 
   const calculatedHmac = crypto
-    .createHmac('sha512', config.hmacSecret)
+    .createHmac('sha512', hmacSecret)
     .update(concatenated)
     .digest('hex');
 
@@ -210,7 +213,7 @@ export function verifyWebhookHmac(
     Buffer.from(receivedHmac)
   );
   } catch (err) {
-    // getConfig() throws when Paymob env vars are missing; treat as verification failure
+    // Missing/invalid HMAC secret should fail closed.
     // so the webhook returns 401 rather than an unhandled 500.
     console.error('verifyWebhookHmac error (config missing?):', err);
     return false;

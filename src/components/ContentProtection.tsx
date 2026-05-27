@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useCallback, ReactNode } from 'react';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 interface ContentProtectionProps {
   children: ReactNode;
@@ -23,6 +25,7 @@ export default function ContentProtection({
   watermarkText,
   enabled = true,
 }: ContentProtectionProps) {
+  const { lang } = useLang();
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (!enabled) return;
@@ -124,7 +127,6 @@ export default function ContentProtection({
     document.addEventListener('dragstart', handleDragStart);
 
     // Detect devtools by checking window.outerWidth vs window.innerWidth
-    let devtoolsCheckInterval: NodeJS.Timeout;
     const checkDevtools = () => {
       const threshold = 160;
       const widthDiff = window.outerWidth - window.innerWidth > threshold;
@@ -136,7 +138,7 @@ export default function ContentProtection({
         document.body.classList.remove('devtools-open');
       }
     };
-    devtoolsCheckInterval = setInterval(checkDevtools, 1000);
+    const devtoolsCheckInterval = setInterval(checkDevtools, 1000);
 
     // Screen recording detection: intercept getDisplayMedia
     const origGetDisplayMedia = navigator.mediaDevices?.getDisplayMedia;
@@ -144,7 +146,7 @@ export default function ContentProtection({
       navigator.mediaDevices.getDisplayMedia = function (options?: DisplayMediaStreamOptions) {
         document.body.classList.add('screen-recording');
         document.querySelectorAll('video').forEach(v => v.pause());
-        showWarning('⚠️ تم اكتشاف تسجيل الشاشة');
+        showWarning(t('⚠️ تم اكتشاف تسجيل الشاشة', '⚠️ Screen recording detected'));
         return origGetDisplayMedia.call(this, options);
       };
     }
@@ -161,7 +163,7 @@ export default function ContentProtection({
     function denyCapture(): never {
       document.body.classList.add('screen-recording');
       document.querySelectorAll('video').forEach(v => v.pause());
-      showWarning('⚠️ التسجيل من العنصر غير مسموح');
+      showWarning(t('⚠️ التسجيل من العنصر غير مسموح', '⚠️ Capture from media element not allowed'));
       throw new DOMException('Capture from protected media element is blocked', 'NotAllowedError');
     }
     if (origCaptureStream) {
@@ -191,7 +193,7 @@ export default function ContentProtection({
         });
         if (fromProtectedVideo) {
           document.body.classList.add('screen-recording');
-          showWarning('⚠️ التسجيل غير مسموح');
+          showWarning(t('⚠️ التسجيل غير مسموح', '⚠️ Recording not allowed'));
           throw new DOMException('MediaRecorder is blocked on protected content', 'NotAllowedError');
         }
         return new origMediaRecorder(stream, options);
@@ -213,14 +215,14 @@ export default function ContentProtection({
     }
     HTMLCanvasElement.prototype.toDataURL = function (this: HTMLCanvasElement, ...args: any[]) {
       if (isProtectedCanvas(this)) {
-        showWarning('⚠️ النسخ من الصفحة غير مسموح');
+        showWarning(t('⚠️ النسخ من الصفحة غير مسموح', '⚠️ Copying from page not allowed'));
         throw new DOMException('Canvas export blocked on protected content', 'SecurityError');
       }
       return (origToDataURL as any).apply(this, args);
     };
     HTMLCanvasElement.prototype.toBlob = function (this: HTMLCanvasElement, ...args: any[]) {
       if (isProtectedCanvas(this)) {
-        showWarning('⚠️ النسخ من الصفحة غير مسموح');
+        showWarning(t('⚠️ النسخ من الصفحة غير مسموح', '⚠️ Copying from page not allowed'));
         throw new DOMException('Canvas export blocked on protected content', 'SecurityError');
       }
       return (origToBlob as any).apply(this, args);
@@ -229,7 +231,7 @@ export default function ContentProtection({
     // Detect Picture-in-Picture attempts
     const handlePiP = (e: Event) => {
       e.preventDefault();
-      showWarning('⚠️ صورة داخل صورة غير مسموح بها');
+      showWarning(t('⚠️ صورة داخل صورة غير مسموح بها', '⚠️ Picture-in-picture not allowed'));
     };
     document.addEventListener('enterpictureinpicture', handlePiP, true);
 
@@ -297,7 +299,7 @@ export default function ContentProtection({
         }
 
         body.devtools-open::after {
-          content: 'أدوات المطور مفتوحة - أغلقها لعرض المحتوى';
+          content: '${lang === 'ar' ? 'أدوات المطور مفتوحة - أغلقها لعرض المحتوى' : 'Developer tools open - close them to view content'}';
           position: fixed;
           top: 50%;
           left: 50%;
@@ -317,7 +319,7 @@ export default function ContentProtection({
           pointer-events: none !important;
         }
         body.screen-recording::after {
-          content: '⚠️ تم اكتشاف تسجيل الشاشة';
+          content: '${lang === 'ar' ? '⚠️ تم اكتشاف تسجيل الشاشة' : '⚠️ Screen recording detected'}';
           position: fixed;
           top: 50%;
           left: 50%;
@@ -382,7 +384,7 @@ export default function ContentProtection({
   );
 }
 
-function showWarning(message = '⚠️ هذا المحتوى محمي') {
+function showWarning(message = t('⚠️ هذا المحتوى محمي', '⚠️ This content is protected')) {
   // Brief toast warning
   const existing = document.getElementById('protection-warning');
   if (existing) existing.remove();

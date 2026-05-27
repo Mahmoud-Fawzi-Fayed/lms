@@ -7,16 +7,18 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { MiniBarChart, MiniLineChart } from '@/components/analytics/Charts';
 import { formatPrice } from '@/lib/utils';
 import { exportToPdf } from '@/lib/export-utils';
-
-const instructorLinks = [
-  { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/instructor/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/instructor/courses/new', label: 'إنشاء كورس', icon: '➕' },
-  { href: '/dashboard/instructor/exams', label: 'الاختبارات', icon: '📝' },
-];
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function InstructorCourseStatsPage() {
   const { data: session, status } = useSession();
+  useLang();
+  const instructorLinks = [
+    { href: '/dashboard/instructor', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/instructor/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/instructor/courses/new', label: t('إنشاء كورس', 'Create Course'), icon: '➕' },
+    { href: '/dashboard/instructor/exams', label: t('الاختبارات', 'Exams'), icon: '📝' },
+  ];
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
@@ -48,13 +50,12 @@ export default function InstructorCourseStatsPage() {
   const exportStudentsPdf = async () => {
     await exportToPdf(
       `course-${params.id}-students.pdf`,
-      `إحصائيات طلاب الكورس: ${data?.course?.title || ''}`,
-      data?.students || [],
+      `${t('إحصائيات طلاب الكورس:', 'Course Students Stats:')} ${data?.course?.title || ''}`,      data?.students || [],
       [
-        { header: 'الاسم', value: (r: any) => r.name },
-        { header: 'البريد', value: (r: any) => r.email },
-        { header: 'نسبة التقدم', value: (r: any) => `${r.progress}%` },
-        { header: 'تاريخ التسجيل', value: (r: any) => new Date(r.enrolledAt).toLocaleDateString('ar-EG') },
+        { header: t('الاسم', 'Name'), value: (r: any) => r.name },
+        { header: t('البريد', 'Email'), value: (r: any) => r.email },
+        { header: t('نسبة التقدم', 'Progress %'), value: (r: any) => `${r.progress}%` },
+        { header: t('تاريخ التسجيل', 'Enrollment Date'), value: (r: any) => new Date(r.enrolledAt).toLocaleDateString('ar-EG') },
       ]
     );
   };
@@ -73,7 +74,7 @@ export default function InstructorCourseStatsPage() {
   if (!data) {
     return (
       <DashboardSidebar links={instructorLinks}>
-        <div className="p-8 text-center text-slate-500">لا توجد بيانات</div>
+        <div className="p-8 text-center text-slate-500">{t('لا توجد بيانات', 'No data available')}</div>
       </DashboardSidebar>
     );
   }
@@ -87,28 +88,28 @@ export default function InstructorCourseStatsPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <button onClick={() => router.back()} className="text-sm text-slate-500 hover:text-slate-700 mb-2 flex items-center gap-1">
-              ← رجوع
+              ← {t('رجوع', 'Back')}
             </button>
-            <h1 className="text-2xl font-bold text-slate-900">إحصائيات الكورس</h1>
+            <h1 className="text-2xl font-bold text-slate-900">{t('إحصائيات الكورس', 'Course Statistics')}</h1>
             <p className="text-slate-500 text-sm mt-1">{course.title}</p>
           </div>
           <button
             onClick={exportStudentsPdf}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
           >
-            📥 تصدير PDF
+            📥 {t('تصدير PDF', 'Export PDF')}
           </button>
         </div>
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
           {[
-            { label: 'إجمالي المشتركين', value: stats.totalEnrollments, icon: '👥', color: 'bg-blue-50 text-blue-700' },
-            { label: 'متوسط التقدم', value: `${stats.avgProgress}%`, icon: '📈', color: 'bg-green-50 text-green-700' },
-            { label: 'إجمالي الإيرادات', value: formatPrice(stats.totalRevenue), icon: '💰', color: 'bg-yellow-50 text-yellow-700' },
-            { label: 'المدفوعات الناجحة', value: stats.paidPaymentsCount, icon: '✅', color: 'bg-emerald-50 text-emerald-700' },
-            { label: 'الاختبارات', value: stats.totalExams, icon: '📝', color: 'bg-purple-50 text-purple-700' },
-            { label: 'إجمالي المحاولات', value: stats.totalExamAttempts, icon: '🎯', color: 'bg-orange-50 text-orange-700' },
+            { label: t('إجمالي المشتركين', 'Total Enrollments'), value: stats.totalEnrollments, icon: '👥', color: 'bg-blue-50 text-blue-700' },
+            { label: t('متوسط التقدم', 'Avg Progress'), value: `${stats.avgProgress}%`, icon: '📈', color: 'bg-green-50 text-green-700' },
+            { label: t('إجمالي الإيرادات', 'Total Revenue'), value: formatPrice(stats.totalRevenue), icon: '💰', color: 'bg-yellow-50 text-yellow-700' },
+            { label: t('المدفوعات الناجحة', 'Successful Payments'), value: stats.paidPaymentsCount, icon: '✅', color: 'bg-emerald-50 text-emerald-700' },
+            { label: t('الاختبارات', 'Exams'), value: stats.totalExams, icon: '📝', color: 'bg-purple-50 text-purple-700' },
+            { label: t('إجمالي المحاولات', 'Total Attempts'), value: stats.totalExamAttempts, icon: '🎯', color: 'bg-orange-50 text-orange-700' },
           ].map((card, i) => (
             <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
               <div className={`inline-flex text-2xl p-2 rounded-xl mb-3 ${card.color}`}>{card.icon}</div>
@@ -121,15 +122,15 @@ export default function InstructorCourseStatsPage() {
         {/* Trend charts */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">الاشتراكات الشهرية</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('الاشتراكات الشهرية', 'Monthly Enrollments')}</h3>
             <MiniLineChart data={trends.enrollments.map((d: any) => ({ label: d.label, value: d.enrollments }))} stroke="#3b82f6" />
           </div>
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">المدفوعات الشهرية</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('المدفوعات الشهرية', 'Monthly Payments')}</h3>
             <MiniBarChart data={trends.payments.map((d: any) => ({ label: d.label, value: d.payments }))} color="bg-purple-500" />
           </div>
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">الإيرادات الشهرية (ج.م)</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('الإيرادات الشهرية (ج.م)', 'Monthly Revenue (EGP)')}</h3>
             <MiniLineChart data={trends.revenue.map((d: any) => ({ label: d.label, value: d.revenue }))} stroke="#10b981" />
           </div>
         </div>
@@ -137,23 +138,23 @@ export default function InstructorCourseStatsPage() {
         {/* Students table */}
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">قائمة الطلاب</h3>
-            <span className="text-sm text-slate-500">{students.length} طالب</span>
+            <h3 className="font-semibold text-slate-900">{t('قائمة الطلاب', 'Students List')}</h3>
+            <span className="text-sm text-slate-500">{students.length} {t('طالب', 'students')}</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">#</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">الاسم</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">البريد</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">التقدم</th>
-                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">تاريخ التسجيل</th>
+                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">{t('الاسم', 'Name')}</th>
+                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">{t('البريد', 'Email')}</th>
+                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">{t('التقدم', 'Progress')}</th>
+                  <th className="text-right px-6 py-3 text-xs font-semibold text-slate-500">{t('تاريخ التسجيل', 'Enrollment Date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {students.length === 0 ? (
-                  <tr><td colSpan={5} className="text-center py-8 text-slate-400">لا يوجد طلاب مشتركون بعد</td></tr>
+                  <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('لا يوجد طلاب مشتركون بعد', 'No enrolled students yet')}</td></tr>
                 ) : students.map((s: any, i: number) => (
                   <tr key={i} className="hover:bg-slate-50">
                     <td className="px-6 py-3 text-slate-400">{i + 1}</td>

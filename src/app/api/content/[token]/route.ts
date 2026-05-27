@@ -16,6 +16,7 @@ import { watermarkPdf } from '@/lib/pdf-watermark';
 // Range/stream video requests are NOT counted here (a single video play issues
 // dozens of Range requests); they're protected by Sec-Fetch-Dest=video instead.
 const tokenHits = new Map<string, { count: number; firstSeen: number }>();
+const watermarkedPdfCache = new Map<string, { bytes: Uint8Array; expiresAt: number }>();
 // Small lenient cap: React strict-mode in dev double-mounts, browser back/forward
 // re-renders the PDF, and pdf.js can issue a second fetch on parse errors.
 // 3 hits/hour still blocks any meaningful mass-scraping (a course with 100
@@ -23,11 +24,16 @@ const tokenHits = new Map<string, { count: number; firstSeen: number }>();
 // fingerprint+IP+user bound), while letting normal users navigate freely.
 const TOKEN_RAW_LIMIT = 3;
 const TOKEN_RAW_WINDOW = 60 * 60_000; // 1 hour
+const WATERMARK_CACHE_TTL = 5 * 60_000; // 5 minutes
+const WATERMARK_CACHE_MAX = 24;
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now();
     for (const [k, v] of tokenHits) {
       if (now - v.firstSeen > TOKEN_RAW_WINDOW) tokenHits.delete(k);
+    }
+    for (const [k, v] of watermarkedPdfCache) {
+      if (now > v.expiresAt) watermarkedPdfCache.delete(k);
     }
   }, 10 * 60_000);
 }
@@ -40,6 +46,24 @@ function bumpTokenHit(token: string): boolean {
   }
   rec.count++;
   return rec.count <= TOKEN_RAW_LIMIT;
+}
+
+function getCachedWatermarkedPdf(key: string): Uint8Array | null {
+  const hit = watermarkedPdfCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    watermarkedPdfCache.delete(key);
+    return null;
+  }
+  return hit.bytes;
+}
+
+function setCachedWatermarkedPdf(key: string, bytes: Uint8Array) {
+  if (watermarkedPdfCache.size >= WATERMARK_CACHE_MAX) {
+    const oldestKey = watermarkedPdfCache.keys().next().value;
+    if (oldestKey) watermarkedPdfCache.delete(oldestKey);
+  }
+  watermarkedPdfCache.set(key, { bytes, expiresAt: Date.now() + WATERMARK_CACHE_TTL });
 }
 
 // GET /api/content/[token]?mode=raw  → raw binary (only via JS fetch with custom header)
@@ -264,13 +288,18 @@ export async function GET(
         const lstat = await fs.lstat(resolvedFilePath);
         if (lstat.isSymbolicLink()) return apiError('forbidden', 403);
         if (!lstat.isFile()) return apiError('not a file', 400);
-        const original = await fs.readFile(resolvedFilePath);
         const stamp = user.email || user.id;
         // Richer second line: IP + UTC timestamp, so a leaked PDF traces back to
         // the exact session and not just "some download by this user".
         const ts = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
         const meta = `${clientIp(req) || 'unknown'} · ${ts}`;
-        const stamped = await watermarkPdf(original, stamp, meta);
+        const cacheKey = `${token}:${lstat.mtimeMs}:${stamp}`;
+        let stamped = getCachedWatermarkedPdf(cacheKey);
+        if (!stamped) {
+          const original = await fs.readFile(resolvedFilePath);
+          stamped = await watermarkPdf(original, stamp, meta);
+          setCachedWatermarkedPdf(cacheKey, stamped);
+        }
         await logAccess(user.id, decoded.courseId, decoded.lessonId, 'raw', req, stamped.byteLength);
         return new NextResponse(Buffer.from(stamped) as any, {
           status: 200,

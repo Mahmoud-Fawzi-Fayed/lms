@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 interface PdfCanvasViewerProps {
   src: string;
@@ -15,16 +17,19 @@ interface PdfCanvasViewerProps {
  * keyboard navigation (← → PageUp PageDown), zoom in/out, no browser PDF plugin.
  */
 export default function PdfCanvasViewer({ src, protected: isProtected = true, maxHeight = '85vh' }: PdfCanvasViewerProps) {
+  useLang();
   const containerRef  = useRef<HTMLDivElement>(null);
   const canvasRef     = useRef<HTMLCanvasElement>(null);
-  const nextCanvasRef = useRef<HTMLCanvasElement | null>(null); // off-screen pre-render
   const renderTaskRef = useRef<any>(null);
+  const preRenderTaskRef = useRef<any>(null);
+  const loadTaskRef = useRef<any>(null);
   const [loading,      setLoading]     = useState(true);
   const [pageLoading,  setPageLoading] = useState(false);
   const [error,        setError]       = useState('');
   const [currentPage,  setCurrentPage] = useState(1);
   const [totalPages,   setTotalPages]  = useState(0);
-  const [scale,        setScale]       = useState(1.5);
+  const [scale,        setScale]       = useState(1.25);
+  const [isLowPowerDevice, setIsLowPowerDevice] = useState(false);
   const pdfDocRef = useRef<any>(null);
 
   // ── Watermark: user email burned into every rendered canvas page ────────
@@ -33,6 +38,14 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
   useEffect(() => {
     watermarkRef.current = (sessionData?.user as any)?.email ?? (sessionData?.user as any)?.name ?? '';
   }, [sessionData]);
+
+  // Avoid expensive background prerendering on lower-end devices.
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = (navigator as any).deviceMemory || 4;
+    setIsLowPowerDevice(cores <= 4 || mem <= 4);
+  }, []);
 
   // ── Load PDF document ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -44,43 +57,63 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         const pdfjsLib = await import('pdfjs-dist');
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-        let data: ArrayBuffer;
-        if (isProtected) {
-          const res = await fetch(src, { credentials: 'include', headers: { 'X-Content-Request': '1' } });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          data = await res.arrayBuffer();
-        } else {
-          const res = await fetch(src);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          data = await res.arrayBuffer();
-        }
-        if (cancelled) return;
-        if (!data.byteLength) throw new Error('Empty PDF');
-
-        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        const loadingTask = pdfjsLib.getDocument({
+          url: src,
+          withCredentials: isProtected,
+          httpHeaders: isProtected ? { 'X-Content-Request': '1' } : undefined,
+          rangeChunkSize: 64 * 1024,
+          disableAutoFetch: false,
+          disableStream: false,
+        });
+        loadTaskRef.current = loadingTask;
+        const pdf = await loadingTask.promise;
         if (cancelled) return;
 
         pdfDocRef.current = pdf;
         setTotalPages(pdf.numPages);
         setCurrentPage(1);
+
+        // Fit first page width to container for quicker first paint and better UX.
+        try {
+          const firstPage = await pdf.getPage(1);
+          const viewport = firstPage.getViewport({ scale: 1 });
+          const containerWidth = containerRef.current?.clientWidth || viewport.width;
+          const fitScale = Math.max(0.85, Math.min(1.6, containerWidth / viewport.width));
+          setScale(+fitScale.toFixed(2));
+        } catch {
+          setScale(1.25);
+        }
+
         setLoading(false);
       } catch (err) {
-        if (!cancelled) { console.error('PDF load error:', err); setError('فشل تحميل الملف'); setLoading(false); }
+        if (!cancelled) { console.error('PDF load error:', err); setError(t('فشل تحميل الملف', 'Failed to load file')); setLoading(false); }
       }
     }
     loadPdf();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      try { loadTaskRef.current?.destroy?.(); } catch {}
+      loadTaskRef.current = null;
+      if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
+      if (preRenderTaskRef.current) { preRenderTaskRef.current.cancel(); preRenderTaskRef.current = null; }
+      try { pdfDocRef.current?.destroy?.(); } catch {}
+      pdfDocRef.current = null;
+    };
   }, [src, isProtected]);
 
   // ── Render page to canvas with device-pixel-ratio support ─────────────────
-  const renderPage = useCallback(async (pageNum: number, targetScale: number, canvas: HTMLCanvasElement) => {
+  const renderPage = useCallback(async (
+    pageNum: number,
+    targetScale: number,
+    canvas: HTMLCanvasElement,
+    taskSlot?: { current: any }
+  ) => {
     const pdf = pdfDocRef.current;
     if (!pdf || pageNum < 1 || pageNum > pdf.numPages) return;
 
-    // Cancel any in-flight render
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
+    if (taskSlot?.current) {
+      taskSlot.current.cancel();
+      taskSlot.current = null;
     }
 
     const page     = await pdf.getPage(pageNum);
@@ -98,9 +131,12 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
     ctx.scale(dpr, dpr);
 
     const task = page.render({ canvasContext: ctx, viewport });
-    renderTaskRef.current = task;
-    await task.promise;
-    renderTaskRef.current = null;
+    if (taskSlot) taskSlot.current = task;
+    try {
+      await task.promise;
+    } finally {
+      if (taskSlot && taskSlot.current === task) taskSlot.current = null;
+    }
 
     // ── Draw repeating diagonal watermark ──────────────────────────────────
     const wm = watermarkRef.current;
@@ -138,16 +174,20 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
 
     (async () => {
       try {
-        await renderPage(currentPage, scale, canvas);
+        await renderPage(currentPage, scale, canvas, renderTaskRef);
         if (cancelled) return;
         setPageLoading(false);
 
-        // Pre-render next page off-screen
+        // Pre-render next page off-screen only when device budget allows.
         const pdf = pdfDocRef.current;
-        if (currentPage < totalPages && pdf) {
+        if (!isLowPowerDevice && currentPage < totalPages && totalPages <= 250 && pdf) {
           const off = document.createElement('canvas');
-          nextCanvasRef.current = off;
-          try { await renderPage(currentPage + 1, scale, off); } catch { /* ignore prerender error */ }
+          const idle = (window as any).requestIdleCallback as ((cb: () => void) => void) | undefined;
+          const run = async () => {
+            try { await renderPage(currentPage + 1, scale, off, preRenderTaskRef); } catch { /* ignore prerender error */ }
+          };
+          if (idle) idle(() => { void run(); });
+          else { void run(); }
         }
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException' && !cancelled) {
@@ -160,8 +200,9 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
     return () => {
       cancelled = true;
       if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
+      if (preRenderTaskRef.current) { preRenderTaskRef.current.cancel(); preRenderTaskRef.current = null; }
     };
-  }, [currentPage, totalPages, scale, loading, renderPage]);
+  }, [currentPage, totalPages, scale, loading, renderPage, isLowPowerDevice]);
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
   useEffect(() => {
@@ -217,7 +258,7 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
           <div className="flex items-center justify-center h-64 w-full">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full" />
-              <span className="text-gray-300 text-sm">جاري تحميل الملف...</span>
+              <span className="text-gray-300 text-sm">{t('جاري تحميل الملف...', 'Loading file...')}</span>
             </div>
           </div>
         ) : (
@@ -257,7 +298,7 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
           </div>
 
           {/* Keyboard hint */}
-          <span className="text-gray-500 text-xs hidden sm:inline">← → للتنقل</span>
+          <span className="text-gray-500 text-xs hidden sm:inline">{t('← → للتنقل', '← → to navigate')}</span>
 
           {/* Zoom */}
           <div className="flex items-center gap-2">

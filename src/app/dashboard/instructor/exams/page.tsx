@@ -8,16 +8,17 @@ import Link from 'next/link';
 import { ACADEMIC_YEARS } from '@/lib/validations';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const instructorLinks = [
-  { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/instructor/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/instructor/courses/new', label: 'إنشاء كورس', icon: '➕' },
-  { href: '/dashboard/instructor/exams', label: 'الاختبارات', icon: '📝' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function InstructorExamsPage() {
   const { data: session, status } = useSession();
+  useLang();
+  const instructorLinks = [
+    { href: '/dashboard/instructor', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/instructor/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/instructor/courses/new', label: t('إنشاء كورس', 'Create Course'), icon: '➕' },
+    { href: '/dashboard/instructor/exams', label: t('الاختبارات', 'Exams'), icon: '📝' },
+  ];
   const router = useRouter();
   const [exams, setExams] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
@@ -119,8 +120,8 @@ export default function InstructorExamsPage() {
     if (field === 'type') {
       if (value === 'truefalse') {
         updated[index].options = [
-          { text: 'صح', isCorrect: true },
-          { text: 'خطأ', isCorrect: false },
+          { text: t('صح', 'True'), isCorrect: true },
+          { text: t('خطأ', 'False'), isCorrect: false },
         ];
       } else if (value === 'mcq') {
         updated[index].options = [
@@ -249,7 +250,7 @@ export default function InstructorExamsPage() {
   };
 
   const deleteExam = async (examId: string) => {
-    if (!confirm('حذف هذا الاختبار؟')) return;
+    if (!confirm(t('حذف هذا الاختبار؟', 'Delete this exam?'))) return;
     try {
       const res = await fetch(`/api/exams/${examId}`, { method: 'DELETE' });
       const data = await res.json();
@@ -298,7 +299,7 @@ export default function InstructorExamsPage() {
             q.options && q.options.length > 0
               ? q.options
               : q.type === 'truefalse'
-              ? [{ text: 'صح', isCorrect: true }, { text: 'خطأ', isCorrect: false }]
+              ? [{ text: t('صح', 'True'), isCorrect: true }, { text: t('خطأ', 'False'), isCorrect: false }]
               : [
                   { text: '', isCorrect: true },
                   { text: '', isCorrect: false },
@@ -320,39 +321,39 @@ export default function InstructorExamsPage() {
     <DashboardSidebar links={instructorLinks}>
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">الاختبارات</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{t('الاختبارات', 'Exams')}</h1>
           <button
             onClick={() => (showCreate ? cancelForm() : setShowCreate(true))}
             className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
           >
-            {showCreate ? 'إلغاء' : '+ إنشاء اختبار'}
+            {showCreate ? t('إلغاء', 'Cancel') : `+ ${t('إنشاء اختبار', 'Create Exam')}`}
           </button>
         </div>
 
         {/* Create Exam Form */}
         {showCreate && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-8 space-y-6">
-            <h2 className="font-semibold text-slate-900">{editingExamId ? 'تعديل الاختبار' : 'اختبار جديد'}</h2>
+<h2 className="font-semibold text-slate-900">{editingExamId ? t('تعديل الاختبار', 'Edit Exam') : t('اختبار جديد', 'New Exam')}</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">العنوان *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('العنوان', 'Title')} *</label>
                 <input
                   type="text"
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  placeholder="عنوان الاختبار"
+                  placeholder={t('عنوان الاختبار', 'Exam title')}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">الكورس (اختياري)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('الكورس (اختياري)', 'Course (optional)')}</label>
                 <select
                   value={form.course}
                   onChange={(e) => setForm({ ...form, course: e.target.value })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <option value="">اختبار مستقل (بدون كورس)</option>
+                  <option value="">{t('اختبار مستقل (بدون كورس)', 'Independent exam (no course)')}</option>
                   {courses.map((c) => (
                     <option key={c._id} value={c._id}>{c.title}</option>
                   ))}
@@ -361,13 +362,13 @@ export default function InstructorExamsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">السنة الدراسية المستهدفة *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('السنة الدراسية المستهدفة', 'Target Academic Year')} *</label>
               <select
                 value={form.targetYear}
                 onChange={(e) => setForm({ ...form, targetYear: e.target.value })}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
               >
-                <option value="">اختر السنة الدراسية</option>
+                <option value="">{t('اختر السنة الدراسية', 'Select academic year')}</option>
                 {ACADEMIC_YEARS.map((y) => (
                   <option key={y.value} value={y.value}>{y.label}</option>
                 ))}
@@ -375,7 +376,7 @@ export default function InstructorExamsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">الوصف</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('الوصف', 'Description')}</label>
               <textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
@@ -387,7 +388,7 @@ export default function InstructorExamsPage() {
             {!form.course && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">نوع الوصول</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('نوع الوصول', 'Access Type')}</label>
                   <select
                     value={form.accessType}
                     onChange={(e) => {
@@ -401,12 +402,12 @@ export default function InstructorExamsPage() {
                     }}
                     className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                   >
-                    <option value="free">مجاني</option>
-                    <option value="paid">مدفوع</option>
+                    <option value="free">{t('مجاني', 'Free')}</option>
+                    <option value="paid">{t('مدفوع', 'Paid')}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">السعر (ج.م)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('السعر (ج.م)', 'Price (EGP)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -417,7 +418,7 @@ export default function InstructorExamsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">سعر بعد الخصم (اختياري)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">{t('سعر بعد الخصم (اختياري)', 'Discounted price (optional)')}</label>
                   <input
                     type="number"
                     min={0}
@@ -432,7 +433,7 @@ export default function InstructorExamsPage() {
 
             <div className="grid grid-cols-3 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">المدة (دقيقة)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('المدة (دقيقة)', 'Duration (minutes)')}</label>
                 <input
                   type="number"
                   value={form.durationMinutes}
@@ -442,7 +443,7 @@ export default function InstructorExamsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">درجة النجاح (%)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('درجة النجاح (%)', 'Passing Score (%)')}</label>
                 <input
                   type="number"
                   value={form.passingScore}
@@ -453,7 +454,7 @@ export default function InstructorExamsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">أقصى عدد محاولات</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('أقصى عدد محاولات', 'Max Attempts')}</label>
                 <input
                   type="number"
                   value={form.maxAttempts}
@@ -466,21 +467,21 @@ export default function InstructorExamsPage() {
 
             {/* Questions */}
             <div>
-              <h3 className="font-medium text-slate-900 mb-4">الأسئلة</h3>
+              <h3 className="font-medium text-slate-900 mb-4">{t('الأسئلة', 'Questions')}</h3>
               <div className="space-y-4">
                 {form.questions.map((q, qi) => (
                   <div key={qi} className="bg-slate-50 rounded-xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-semibold text-slate-700">السؤال {qi + 1}</span>
+                      <span className="text-sm font-semibold text-slate-700">{t('السؤال', 'Question')} {qi + 1}</span>
                       <div className="flex items-center gap-3">
                         <select
                           value={q.type}
                           onChange={(e) => updateQuestion(qi, 'type', e.target.value)}
                           className="text-sm border rounded-lg px-2 py-1"
                         >
-                          <option value="mcq">اختيار من متعدد</option>
-                          <option value="truefalse">صح / خطأ</option>
-                          <option value="fillinblank">أكمل الفراغ</option>
+                          <option value="mcq">{t('اختيار من متعدد', 'Multiple choice')}</option>
+                          <option value="truefalse">{t('صح / خطأ', 'True / False')}</option>
+                          <option value="fillinblank">{t('أكمل الفراغ', 'Fill in the blank')}</option>
                         </select>
                         <input
                           type="number"
@@ -488,21 +489,20 @@ export default function InstructorExamsPage() {
                           onChange={(e) => updateQuestion(qi, 'points', e.target.value)}
                           min={1}
                           className="w-16 text-sm border rounded-lg px-2 py-1"
-                          title="النقاط"
+                          title={t('النقاط', 'Points')}
                         />
                         <button
                           onClick={() => removeQuestion(qi)}
                           className="text-red-500 hover:text-red-700 text-sm"
                         >
-                          حذف
+                          {t('حذف', 'Delete')}
                         </button>
                       </div>
                     </div>
-
                     <textarea
                       value={q.text}
                       onChange={(e) => updateQuestion(qi, 'text', e.target.value)}
-                      placeholder="نص السؤال..."
+                      placeholder={t('نص السؤال...', 'Question text...')}
                       rows={2}
                       className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                     />
@@ -512,7 +512,7 @@ export default function InstructorExamsPage() {
                         type="text"
                         value={q.correctAnswer}
                         onChange={(e) => updateQuestion(qi, 'correctAnswer', e.target.value)}
-                        placeholder="الإجابة الصحيحة"
+                        placeholder={t('الإجابة الصحيحة', 'Correct answer')}
                         className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     ) : (
@@ -530,7 +530,7 @@ export default function InstructorExamsPage() {
                               type="text"
                               value={opt.text}
                               onChange={(e) => updateOption(qi, oi, 'text', e.target.value)}
-                              placeholder={`الخيار ${oi + 1}`}
+                              placeholder={`${t('الخيار', 'Option')} ${oi + 1}`}
                               className="flex-1 px-3 py-1.5 border rounded-lg text-sm"
                               disabled={q.type === 'truefalse'}
                             />
@@ -539,7 +539,7 @@ export default function InstructorExamsPage() {
                                 type="button"
                                 onClick={() => removeOption(qi, oi)}
                                 className="text-red-400 hover:text-red-600 text-xs px-1"
-                                title="حذف الخيار"
+                                title={t('حذف الخيار', 'Delete option')}
                               >
                                 ✕
                               </button>
@@ -552,7 +552,7 @@ export default function InstructorExamsPage() {
                             onClick={() => addOption(qi)}
                             className="text-sm text-blue-500 hover:text-blue-700 mt-1"
                           >
-                            + إضافة خيار
+                            + {t('إضافة خيار', 'Add option')}
                           </button>
                         )}
                       </div>
@@ -565,20 +565,20 @@ export default function InstructorExamsPage() {
                 onClick={addQuestion}
                 className="mt-4 w-full py-2 border-2 border-dashed rounded-xl text-sm text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
               >
-                + إضافة سؤال
+                + {t('إضافة سؤال', 'Add question')}
               </button>
             </div>
 
             {/* Settings toggles */}
             <div className="bg-slate-50 rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">إعدادات الاختبار</h3>
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">{t('إعدادات الاختبار', 'Exam Settings')}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {([
-                  { key: 'showResults',       label: 'إظهار النتائج للطالب بعد التسليم' },
-                  { key: 'shuffleQuestions',  label: 'ترتيب عشوائي للأسئلة' },
-                  { key: 'shuffleOptions',    label: 'ترتيب عشوائي للإجابات' },
-                  { key: 'isPublished',       label: 'نشر الاختبار' },
-                  ...(form.course ? [{ key: 'isPreview', label: 'معاينة مجانية (متاح بدون تسجيل في الكورس)' }] : []),
+                  { key: 'showResults',       label: t('إظهار النتائج للطالب بعد التسليم', 'Show results to student after submission') },
+                  { key: 'shuffleQuestions',  label: t('ترتيب عشوائي للأسئلة', 'Shuffle questions') },
+                  { key: 'shuffleOptions',    label: t('ترتيب عشوائي للإجابات', 'Shuffle options') },
+                  { key: 'isPublished',       label: t('نشر الاختبار', 'Publish exam') },
+                  ...(form.course ? [{ key: 'isPreview', label: t('معاينة مجانية (متاح بدون تسجيل في الكورس)', 'Free preview (available without course enrollment)') }] : []),
                 ] as { key: keyof typeof form; label: string }[]).map(({ key, label }) => (
                   <label key={key} className="flex items-center justify-between gap-3 cursor-pointer select-none bg-white rounded-lg px-3 py-2 border border-slate-100">
                     <span className="text-sm text-slate-700">{label}</span>
@@ -606,8 +606,8 @@ export default function InstructorExamsPage() {
                 className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               >
                 {saving
-                  ? editingExamId ? 'جاري الحفظ...' : 'جاري الإنشاء...'
-                  : editingExamId ? 'حفظ التغييرات' : 'إنشاء الاختبار'}
+                  ? editingExamId ? t('جاري الحفظ...', 'Saving...') : t('جاري الإنشاء...', 'Creating...')
+                  : editingExamId ? t('حفظ التغييرات', 'Save Changes') : t('إنشاء الاختبار', 'Create Exam')}
               </button>
             </div>
           </div>
@@ -619,14 +619,14 @@ export default function InstructorExamsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 text-right">
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">الاختبار</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">الكورس</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">السنة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">السعر</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">الأسئلة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">المدة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">الحالة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">إجراءات</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الاختبار', 'Exam')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الكورس', 'Course')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('السنة', 'Year')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('السعر', 'Price')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الأسئلة', 'Questions')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('المدة', 'Duration')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الحالة', 'Status')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('إجراءات', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -642,24 +642,24 @@ export default function InstructorExamsPage() {
                   exams.map((exam) => (
                     <tr key={exam._id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-slate-900">{exam.title}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{exam.course?.title || 'اختبار مستقل'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{exam.course?.title || t('اختبار مستقل', 'Independent exam')}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">{ACADEMIC_YEARS.find(y => y.value === exam.targetYear)?.label || '-'}</td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {exam.course ? (
-                          <span className="inline-flex px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-600">ضمن الكورس</span>
+                          <span className="inline-flex px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-600">{t('ضمن الكورس', 'Within course')}</span>
                         ) : ((exam.accessType === 'free' ? 0 : (exam.discountPrice ?? exam.price ?? 0)) > 0 ? (
-                          <span className="font-semibold text-blue-700">{exam.discountPrice ?? exam.price} ج.م</span>
+                          <span className="font-semibold text-blue-700">{exam.discountPrice ?? exam.price} {t('ج.م', 'EGP')}</span>
                         ) : (
-                          <span className="inline-flex px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">مجاني</span>
+                          <span className="inline-flex px-2 py-1 text-xs rounded-full bg-green-100 text-green-700">{t('مجاني', 'Free')}</span>
                         ))}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">{exam.questions?.length || 0}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{exam.duration} دقيقة</td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{exam.duration} {t('دقيقة', 'min')}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                           exam.isPublished ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                         }`}>
-                          {exam.isPublished ? 'منشور' : 'مسودة'}
+                          {exam.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -668,19 +668,19 @@ export default function InstructorExamsPage() {
                             onClick={() => openEdit(exam)}
                             className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                           >
-                            تعديل
+                            {t('تعديل', 'Edit')}
                           </button>
                           <Link
                             href={`/exams/${exam._id}/leaderboard`}
                             className="text-sm text-slate-500 hover:text-slate-800"
                           >
-                            المتصدرين
+                            {t('المتصدرين', 'Leaderboard')}
                           </Link>
                           <button
                             onClick={() => deleteExam(exam._id)}
                             className="text-sm text-red-600 hover:text-red-800"
                           >
-                            حذف
+                            {t('حذف', 'Delete')}
                           </button>
                         </div>
                       </td>
@@ -688,7 +688,7 @@ export default function InstructorExamsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500">لا توجد اختبارات بعد</td>
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500">{t('لا توجد اختبارات بعد', 'No exams yet')}</td>
                   </tr>
                 )}
               </tbody>

@@ -7,16 +7,17 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const studentLinks = [
-  { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/student/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/student/exams', label: 'اختباراتي', icon: '📝' },
-  { href: '/dashboard/student/profile', label: 'الملف الشخصي', icon: '👤' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function StudentExamsPage() {
+  useLang();
   const { data: session, status } = useSession();
+  const studentLinks = [
+    { href: '/dashboard/student', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/student/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/student/exams', label: t('اختباراتي', 'My Exams'), icon: '📝' },
+    { href: '/dashboard/student/profile', label: t('الملف الشخصي', 'Profile'), icon: '👤' },
+  ];
   const router = useRouter();
   const [attempts, setAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ export default function StudentExamsPage() {
   return (
     <DashboardSidebar links={studentLinks}>
       <div className="p-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-8">اختباراتي</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-8">{t('اختباراتي', 'My Exams')}</h1>
 
         {loading ? (
           <div className="space-y-4">
@@ -60,12 +61,12 @@ export default function StudentExamsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="bg-slate-50 text-right">
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">الاختبار</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">الكورس</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">الدرجة</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">النتيجة</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">التاريخ</th>
-                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">إجراءات</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الاختبار', 'Exam')}</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الكورس', 'Course')}</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('الدرجة', 'Score')}</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('النتيجة', 'Result')}</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('التاريخ', 'Date')}</th>
+                    <th className="px-6 py-4 text-xs font-semibold text-slate-500">{t('إجراءات', 'Actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -82,7 +83,7 @@ export default function StudentExamsPage() {
                             ? 'bg-green-100 text-green-700'
                             : 'bg-red-100 text-red-700'
                         }`}>
-                          {attempt.passed ? 'ناجح' : 'راسب'}
+                          {attempt.passed ? t('ناجح', 'Passed') : t('راسب', 'Failed')}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-500">
@@ -93,7 +94,7 @@ export default function StudentExamsPage() {
                           href={`/exams/${attempt.exam?._id}/leaderboard`}
                           className="text-sm text-blue-600 hover:underline"
                         >
-                          المتصدرين
+                          {t('المتصدرين', 'Leaderboard')}
                         </Link>
                       </td>
                     </tr>
@@ -105,8 +106,8 @@ export default function StudentExamsPage() {
         ) : (
           <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
             <span className="text-5xl mb-4 block">📝</span>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">لا توجد محاولات اختبار بعد</h3>
-            <p className="text-slate-500">ابدأ اختبار من الكورسات المسجلة</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا توجد محاولات اختبار بعد', 'No exam attempts yet')}</h3>
+            <p className="text-slate-500">{t('ابدأ اختبار من الكورسات المسجلة', 'Start an exam from your enrolled courses')}</p>
           </div>
         )}
       </div>

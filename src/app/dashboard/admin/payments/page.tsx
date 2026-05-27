@@ -7,16 +7,17 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { formatPrice } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const adminLinks = [
-  { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/admin/users', label: 'المستخدمين', icon: '👥' },
-  { href: '/dashboard/admin/courses', label: 'الكورسات', icon: '📚' },
-  { href: '/dashboard/admin/payments', label: 'المدفوعات', icon: '💳' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function AdminPaymentsPage() {
+  useLang();
   const { data: session, status } = useSession();
+  const adminLinks = [
+    { href: '/dashboard/admin', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/admin/users', label: t('المستخدمين', 'Users'), icon: '👥' },
+    { href: '/dashboard/admin/courses', label: t('الكورسات', 'Courses'), icon: '📚' },
+    { href: '/dashboard/admin/payments', label: t('المدفوعات', 'Payments'), icon: '💳' },
+  ];
   const router = useRouter();
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,22 +54,22 @@ export default function AdminPaymentsPage() {
   };
 
   const statusLabel: Record<string, string> = {
-    paid: 'مدفوع',
-    pending: 'معلق',
-    failed: 'فاشل',
-    refunded: 'مسترد',
+    paid: t('مدفوع', 'Paid'),
+    pending: t('معلق', 'Pending'),
+    failed: t('فاشل', 'Failed'),
+    refunded: t('مسترد', 'Refunded'),
   };
 
   const methodLabel: Record<string, string> = {
-    card: 'بطاقة',
-    wallet: 'محفظة',
-    fawry: 'فوري',
+    card: t('بطاقة', 'Card'),
+    wallet: t('محفظة', 'Wallet'),
+    fawry: t('فوري', 'Fawry'),
   };
 
   return (
     <DashboardSidebar links={adminLinks}>
       <div className="p-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-8">المدفوعات</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-8">{t('المدفوعات', 'Payments')}</h1>
 
         <div className="flex gap-4 mb-6">
           <select
@@ -76,18 +77,18 @@ export default function AdminPaymentsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
           >
-            <option value="">كل الحالات</option>
-            <option value="paid">مدفوع</option>
-            <option value="pending">معلق</option>
-            <option value="failed">فاشل</option>
-            <option value="refunded">مسترد</option>
+            <option value="">{t('كل الحالات', 'All Statuses')}</option>
+            <option value="paid">{t('مدفوع', 'Paid')}</option>
+            <option value="pending">{t('معلق', 'Pending')}</option>
+            <option value="failed">{t('فاشل', 'Failed')}</option>
+            <option value="refunded">{t('مسترد', 'Refunded')}</option>
           </select>
 
           <button
             onClick={fetchPayments}
             className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors text-sm font-medium"
           >
-            تحديث
+            {t('تحديث', 'Refresh')}
           </button>
         </div>
 
@@ -96,13 +97,13 @@ export default function AdminPaymentsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50 text-right">
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">المستخدم</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">العنصر</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">المبلغ</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">الطريقة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">الحالة</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">تحقق Paymob</th>
-                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">التاريخ</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('المستخدم', 'User')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('العنصر', 'Item')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('المبلغ', 'Amount')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('الطريقة', 'Method')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('الحالة', 'Status')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('تحقق Paymob', 'Paymob Verify')}</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase">{t('التاريخ', 'Date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -124,7 +125,7 @@ export default function AdminPaymentsPage() {
                       <td className="px-6 py-4 text-sm text-slate-600">
                         <div className="font-medium">{payment.itemTitle}</div>
                         <div className="text-xs text-slate-400">
-                          {payment.itemType === 'course' ? 'كورس' : payment.itemType === 'exam' ? 'اختبار' : '-'}
+                          {payment.itemType === 'course' ? t('كورس', 'Course') : payment.itemType === 'exam' ? t('اختبار', 'Exam') : '-'}
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm font-semibold text-slate-900">
@@ -149,7 +150,7 @@ export default function AdminPaymentsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">لا توجد مدفوعات</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500">{t('لا توجد مدفوعات', 'No payments found')}</td>
                   </tr>
                 )}
               </tbody>

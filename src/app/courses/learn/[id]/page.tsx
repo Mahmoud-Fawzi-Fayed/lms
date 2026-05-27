@@ -8,10 +8,12 @@ import SecureVideoPlayer from '@/components/SecureVideoPlayer';
 import SecurePdfViewer from '@/components/SecurePdfViewer';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function CourseLearnPage() {
   const { id } = useParams();
   const { data: session, status } = useSession();
+  useLang();
   const router = useRouter();
 
   const [course, setCourse] = useState<any>(null);
@@ -192,7 +194,7 @@ export default function CourseLearnPage() {
               <h2 className="font-bold text-slate-900 line-clamp-1">{course.title}</h2>
               <div className="mt-2">
                 <div className="flex justify-between text-sm text-slate-600 mb-1">
-                  <span>التقدم</span>
+                  <span>{t('التقدم', 'Progress')}</span>
                   <span>{progress}%</span>
                 </div>
                 <div className="w-full bg-slate-200 rounded-full h-2">
@@ -255,7 +257,7 @@ export default function CourseLearnPage() {
                   <div className="flex-1">
                     <div className="text-sm font-semibold text-blue-700">{courseExam.title}</div>
                     <div className="text-xs text-blue-500">
-                      {courseExam.duration} دقيقة · درجة النجاح {courseExam.passingScore}%
+                      {courseExam.duration} {t('دقيقة', 'min')} · {t('درجة النجاح', 'Passing score')} {courseExam.passingScore}%
                     </div>
                   </div>
                   <span className="text-blue-400 text-xs">←</span>
@@ -286,20 +288,20 @@ export default function CourseLearnPage() {
                 disabled={isFirstLesson}
                 className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-default"
               >
-                السابق ←
+                {t('السابق', 'Previous')} ←
               </button>
               <button
                 onClick={markComplete}
                 disabled={completedLessons.includes(activeLesson?._id)}
                 className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-default"
               >
-                {completedLessons.includes(activeLesson?._id) ? '✓ مكتمل' : 'تحديد كمكتمل'}
+                {completedLessons.includes(activeLesson?._id) ? `✓ ${t('مكتمل', 'Completed')}` : t('تحديد كمكتمل', 'Mark as complete')}
               </button>
               <button
                 onClick={goToNextLesson}
                 className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-default"
               >
-                {isLastLesson && courseExam ? '← ابدأ الاختبار' : isLastLesson ? 'إنهاء الكورس' : '→ التالي'}
+                {isLastLesson && courseExam ? `← ${t('ابدأ الاختبار', 'Start Exam')}` : isLastLesson ? t('إنهاء الكورس', 'Finish Course') : `→ ${t('التالي', 'Next')}`}
               </button>
             </div>
           </div>

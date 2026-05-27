@@ -6,22 +6,24 @@ import { useRouter } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const studentLinks = [
-  { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/student/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/student/exams', label: 'اختباراتي', icon: '📝' },
-  { href: '/dashboard/student/profile', label: 'الملف الشخصي', icon: '👤' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function StudentProfilePage() {
+  useLang();
   const { data: session, status } = useSession();
+  const studentLinks = [
+    { href: '/dashboard/student', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/student/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/student/exams', label: t('اختباراتي', 'My Exams'), icon: '📝' },
+    { href: '/dashboard/student/profile', label: t('الملف الشخصي', 'Profile'), icon: '👤' },
+  ];
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '' });
   const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
   useEffect(() => { if (status === 'unauthenticated') router.push('/login'); }, [status]);
   useEffect(() => { if (status === 'authenticated' && (session?.user as any)?.role !== 'student' && (session?.user as any)?.role !== 'admin') router.push('/dashboard'); }, [status, session]);
@@ -56,13 +58,16 @@ export default function StudentProfilePage() {
       });
       const data = await res.json();
       if (data.success) {
-        setMessage('تم تحديث الملف الشخصي بنجاح!');
+        setMessage(t('تم تحديث الملف الشخصي بنجاح!', 'Profile updated successfully!'));
+        setMessageType('success');
         fetchProfile();
       } else {
-        setMessage(data.error || 'فشل التحديث');
+        setMessage(data.error || t('فشل التحديث', 'Update failed'));
+        setMessageType('error');
       }
     } catch {
-      setMessage('حدث خطأ ما');
+      setMessage(t('حدث خطأ ما', 'An error occurred'));
+      setMessageType('error');
     } finally {
       setSaving(false);
     }
@@ -71,7 +76,7 @@ export default function StudentProfilePage() {
   return (
     <DashboardSidebar links={studentLinks}>
       <div className="p-8 w-full max-w-2xl">
-        <h1 className="text-2xl font-bold text-slate-900 mb-8">الملف الشخصي</h1>
+        <h1 className="text-2xl font-bold text-slate-900 mb-8">{t('الملف الشخصي', 'Profile')}</h1>
 
         {loading ? (
           <div className="bg-white rounded-2xl p-6 animate-pulse space-y-4">
@@ -91,7 +96,7 @@ export default function StudentProfilePage() {
                 <div className="font-semibold text-slate-900">{user.name}</div>
                 <div className="text-sm text-slate-500">{user.email}</div>
                 <div className="text-xs text-slate-400 capitalize mt-1">
-                  {user.role === 'student' ? 'طالب' : user.role === 'instructor' ? 'محاضر' : 'مسؤول'} · عضو منذ {new Date(user.createdAt).toLocaleDateString('ar-EG')}
+                  {user.role === 'student' ? t('طالب', 'Student') : user.role === 'instructor' ? t('محاضر', 'Instructor') : t('مسؤول', 'Admin')} · {t('عضو منذ', 'Member since')} {new Date(user.createdAt).toLocaleDateString('ar-EG')}
                 </div>
               </div>
             </div>
@@ -100,14 +105,14 @@ export default function StudentProfilePage() {
 
             {message && (
               <div className={`px-4 py-3 rounded-xl text-sm ${
-                message.includes('بنجاح') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                messageType === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
               }`}>
                 {message}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">الاسم الكامل</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('الاسم الكامل', 'Full Name')}</label>
               <input
                 type="text"
                 value={form.name}
@@ -117,18 +122,18 @@ export default function StudentProfilePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">البريد الإلكتروني</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('البريد الإلكتروني', 'Email')}</label>
               <input
                 type="email"
                 value={user.email}
                 disabled
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 text-slate-500 cursor-not-allowed"
               />
-              <p className="text-xs text-slate-400 mt-1">لا يمكن تغيير البريد الإلكتروني</p>
+              <p className="text-xs text-slate-400 mt-1">{t('لا يمكن تغيير البريد الإلكتروني', 'Email cannot be changed')}</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">الهاتف</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('الهاتف', 'Phone')}</label>
               <input
                 type="tel"
                 value={form.phone}
@@ -144,7 +149,7 @@ export default function StudentProfilePage() {
                 disabled={saving}
                 className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               >
-                {saving ? 'جاري الحفظ...' : 'حفظ التغييرات'}
+                {saving ? t('جاري الحفظ...', 'Saving...') : t('حفظ التغييرات', 'Save Changes')}
               </button>
             </div>
           </div>

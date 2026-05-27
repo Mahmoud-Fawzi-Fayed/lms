@@ -7,16 +7,17 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const studentLinks = [
-  { href: '/dashboard/student', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/student/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/student/exams', label: 'اختباراتي', icon: '📝' },
-  { href: '/dashboard/student/profile', label: 'الملف الشخصي', icon: '👤' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function StudentCoursesPage() {
+  useLang();
   const { data: session, status } = useSession();
+  const studentLinks = [
+    { href: '/dashboard/student', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/student/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/student/exams', label: t('اختباراتي', 'My Exams'), icon: '📝' },
+    { href: '/dashboard/student/profile', label: t('الملف الشخصي', 'Profile'), icon: '👤' },
+  ];
   const router = useRouter();
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,12 +45,12 @@ export default function StudentCoursesPage() {
     <DashboardSidebar links={studentLinks}>
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">كورساتي</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{t('كورساتي', 'My Courses')}</h1>
           <Link
             href="/courses"
             className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
           >
-            تصفح المزيد
+            {t('تصفح المزيد', 'Browse More')}
           </Link>
         </div>
 
@@ -75,19 +76,19 @@ export default function StudentCoursesPage() {
                   <span className="text-5xl">📚</span>
                   {enrollment.progress?.percentage === 100 && (
                     <div className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                      ✓ مكتمل
+                      ✓ {t('مكتمل', 'Completed')}
                     </div>
                   )}
                 </div>
                 <div className="p-5">
                   <h3 className="font-semibold text-slate-900 mb-1 line-clamp-2">{enrollment.course?.title}</h3>
                   <p className="text-sm text-slate-500 mb-3">
-                    {enrollment.course?.instructor?.name || 'غير معروف'}
+                    {enrollment.course?.instructor?.name || t('غير معروف', 'Unknown')}
                   </p>
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-500">
-                      <span>التقدم</span>
+                      <span>{t('التقدم', 'Progress')}</span>
                       <span className="font-semibold">{enrollment.progress?.percentage || 0}%</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-2">
@@ -99,7 +100,7 @@ export default function StudentCoursesPage() {
                   </div>
 
                   <div className="text-xs text-slate-400 mt-3">
-                    تاريخ التسجيل: {new Date(enrollment.enrolledAt).toLocaleDateString('ar-EG')}
+                    {t('تاريخ التسجيل:', 'Enrolled:')} {new Date(enrollment.enrolledAt).toLocaleDateString('ar-EG')}
                   </div>
                 </div>
               </Link>
@@ -108,13 +109,13 @@ export default function StudentCoursesPage() {
         ) : (
           <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
             <span className="text-5xl mb-4 block">📚</span>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">لا توجد كورسات بعد</h3>
-            <p className="text-slate-500 mb-4">سجل في كورس لتبدأ التعلم</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا توجد كورسات بعد', 'No courses yet')}</h3>
+            <p className="text-slate-500 mb-4">{t('سجل في كورس لتبدأ التعلم', 'Enroll in a course to start learning')}</p>
             <Link
               href="/courses"
               className="inline-flex px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
             >
-              تصفح الكورسات
+              {t('تصفح الكورسات', 'Browse Courses')}
             </Link>
           </div>
         )}

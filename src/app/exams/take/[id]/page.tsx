@@ -6,12 +6,14 @@ import { useSession } from 'next-auth/react';
 import ContentProtection from '@/components/ContentProtection';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 const draftKey = (attemptId: string) => `exam_draft_${attemptId}`;
 
 export default function TakeExamPage() {
   const { id } = useParams();
   const { data: session, status } = useSession();
+  useLang();
   const router = useRouter();
 
   const [exam, setExam] = useState<any>(null);
@@ -77,7 +79,7 @@ export default function TakeExamPage() {
       if (examRef.current && attemptRef.current && !submittingRef.current) {
         localStorage.setItem(draftKey(attemptRef.current._id), JSON.stringify(answersRef.current));
         e.preventDefault();
-        e.returnValue = 'لديك اختبار جارٍ، هل أنت متأكد من المغادرة؟';
+        e.returnValue = t('لديك اختبار جارٍ، هل أنت متأكد من المغادرة؟', 'You have an exam in progress. Are you sure you want to leave?');
       }
     };
     window.addEventListener('beforeunload', onUnload);
@@ -242,7 +244,7 @@ export default function TakeExamPage() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4" />
-          <p className="text-slate-600">جاري تحميل الاختبار...</p>
+          <p className="text-slate-600">{t('جاري تحميل الاختبار...', 'Loading exam...')}</p>
         </div>
       </div>
     );
@@ -260,12 +262,12 @@ export default function TakeExamPage() {
               {result.passed ? '🎉' : '😔'}
             </div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">
-              {result.passed ? 'تهانينا!' : 'حظ أوفر في المرة القادمة!'}
+              {result.passed ? t('تهانينا!', 'Congratulations!') : t('حظ أوفر في المرة القادمة!', 'Better luck next time!')}
             </h1>
             <p className="text-slate-600 mb-8">
               {result.passed
-                ? 'لقد اجتزت الاختبار!'
-                : 'لا تقلق، يمكنك المحاولة مرة أخرى.'}
+                ? t('لقد اجتزت الاختبار!', 'You passed the exam!')
+                : t('لا تقلق، يمكنك المحاولة مرة أخرى.', "Don't worry, you can try again.")}
             </p>
 
             <div className="grid grid-cols-3 gap-4 mb-8">
@@ -273,26 +275,26 @@ export default function TakeExamPage() {
                 <div className={`text-3xl font-bold ${result.passed ? 'text-green-600' : 'text-red-600'}`}>
                   {result.score}%
                 </div>
-                <div className="text-sm text-slate-600 mt-1">الدرجة</div>
+                <div className="text-sm text-slate-600 mt-1">{t('الدرجة', 'Score')}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-4">
                 <div className="text-3xl font-bold text-slate-900">
                   {result.earnedPoints}/{result.totalPoints}
                 </div>
-                <div className="text-sm text-slate-600 mt-1">النقاط</div>
+                <div className="text-sm text-slate-600 mt-1">{t('النقاط', 'Points')}</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-4">
                 <div className="text-3xl font-bold text-slate-900">
                   {formatTimer(result.timeSpent)}
                 </div>
-                <div className="text-sm text-slate-600 mt-1">الوقت</div>
+                <div className="text-sm text-slate-600 mt-1">{t('الوقت', 'Time')}</div>
               </div>
             </div>
 
             {/* Detailed results */}
             {result.details && (
               <div className="text-right mb-8">
-                <h3 className="font-semibold text-slate-900 mb-4">نتائج الأسئلة</h3>
+                <h3 className="font-semibold text-slate-900 mb-4">{t('نتائج الأسئلة', 'Question Results')}</h3>
                 <div className="space-y-3">
                   {result.details.map((detail: any, i: number) => (
                     <div
@@ -311,7 +313,7 @@ export default function TakeExamPage() {
                           <p className="font-medium text-slate-900">{detail.question}</p>
                           {!detail.isCorrect && detail.correctAnswer && (
                             <p className="text-sm text-slate-600 mt-1">
-                              الإجابة الصحيحة: <span className="font-medium">{detail.correctAnswer}</span>
+                              {t('الإجابة الصحيحة:', 'Correct answer:')} <span className="font-medium">{detail.correctAnswer}</span>
                             </p>
                           )}
                           {detail.explanation && (
@@ -330,13 +332,13 @@ export default function TakeExamPage() {
                 onClick={() => router.push(`/exams/${id}/leaderboard`)}
                 className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
               >
-                عرض قائمة المتفوقين
+                {t('عرض قائمة المتفوقين', 'View Leaderboard')}
               </button>
               <button
                 onClick={() => router.back()}
                 className="px-6 py-2 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors"
               >
-                العودة للكورس
+                {t('العودة للكورس', 'Back to Course')}
               </button>
             </div>
           </div>
@@ -357,7 +359,7 @@ export default function TakeExamPage() {
             <h2 className="font-semibold text-slate-900">{exam.title}</h2>
             <div className="flex items-center gap-4">
               <span className="text-sm text-slate-600">
-                {answeredCount}/{exam.questions.length} تمت الإجابة
+                {answeredCount}/{exam.questions.length} {t('تمت الإجابة', 'answered')}
               </span>
               <div
                 className={`px-4 py-1.5 rounded-lg font-mono font-bold text-lg ${
@@ -379,7 +381,7 @@ export default function TakeExamPage() {
             {/* Question Navigator */}
             <div className="lg:col-span-1">
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 sticky top-20">
-                <h3 className="font-semibold text-slate-900 mb-3">الأسئلة</h3>
+                <h3 className="font-semibold text-slate-900 mb-3">{t('الأسئلة', 'Questions')}</h3>
                 <div className="grid grid-cols-5 gap-2">
                   {exam.questions.map((_: any, i: number) => (
                     <button
@@ -402,7 +404,7 @@ export default function TakeExamPage() {
                   disabled={submitting}
                   className="w-full mt-4 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 font-medium"
                 >
-                  {submitting ? 'جاري التسليم...' : 'تسليم الاختبار'}
+                  {submitting ? t('جاري التسليم...', 'Submitting...') : t('تسليم الاختبار', 'Submit Exam')}
                 </button>
               </div>
             </div>
@@ -412,10 +414,10 @@ export default function TakeExamPage() {
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
                 <div className="flex items-center justify-between mb-6">
                   <span className="text-sm text-slate-500">
-                    السؤال {currentQuestionIndex + 1} من {exam.questions.length}
+                    {t('السؤال', 'Question')} {currentQuestionIndex + 1} {t('من', 'of')} {exam.questions.length}
                   </span>
                   <span className="text-sm text-blue-600 font-medium">
-                    {currentQuestion.points} {currentQuestion.points !== 1 ? 'نقاط' : 'نقطة'}
+                    {currentQuestion.points} {currentQuestion.points !== 1 ? t('نقاط', 'points') : t('نقطة', 'point')}
                   </span>
                 </div>
 
@@ -430,13 +432,13 @@ export default function TakeExamPage() {
                     rawOptions.length > 0
                       ? rawOptions
                       : currentQuestion.type === 'truefalse'
-                      ? [{ text: 'صح', _id: 'true' }, { text: 'خطأ', _id: 'false' }]
+                      ? [{ text: t('صح', 'True'), _id: 'true' }, { text: t('خطأ', 'False'), _id: 'false' }]
                       : [];
 
                   if (displayOptions.length === 0) {
                     return (
                       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-700">
-                        لا توجد خيارات لهذا السؤال. يرجى التواصل مع المدرس.
+                        {t('لا توجد خيارات لهذا السؤال. يرجى التواصل مع المدرس.', 'No options for this question. Please contact the instructor.')}
                       </div>
                     );
                   }
@@ -492,7 +494,7 @@ export default function TakeExamPage() {
                         handleAnswer(currentQuestion._id, { answer: e.target.value })
                       }
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary-500 focus:ring-0 outline-none text-lg"
-                      placeholder="اكتب إجابتك هنا..."
+                      placeholder={t('اكتب إجابتك هنا...', 'Write your answer here...')}
                       autoComplete="off"
                     />
                   </div>
@@ -505,7 +507,7 @@ export default function TakeExamPage() {
                     disabled={currentQuestionIndex === 0}
                     className="px-6 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 transition-colors"
                   >
-                    السابق ←
+                    {t('السابق', 'Previous')} ←
                   </button>
                   <button
                     onClick={() =>
@@ -516,7 +518,7 @@ export default function TakeExamPage() {
                     disabled={currentQuestionIndex === exam.questions.length - 1}
                     className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors"
                   >
-                    → التالي
+                    → {t('التالي', 'Next')}
                   </button>
                 </div>
               </div>
@@ -528,15 +530,15 @@ export default function TakeExamPage() {
       {showSubmitConfirm && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-[1px] flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 p-6">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">تأكيد تسليم الاختبار</h3>
-            <p className="text-slate-600 text-sm mb-6">هل أنت متأكد من التسليم؟ لن تتمكن من تعديل الإجابات بعد ذلك.</p>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">{t('تأكيد تسليم الاختبار', 'Confirm Exam Submission')}</h3>
+            <p className="text-slate-600 text-sm mb-6">{t('هل أنت متأكد من التسليم؟ لن تتمكن من تعديل الإجابات بعد ذلك.', 'Are you sure you want to submit? You cannot edit answers after this.')}</p>
             <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowSubmitConfirm(false)}
                 className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
               >
-                إلغاء
+                {t('إلغاء', 'Cancel')}
               </button>
               <button
                 type="button"
@@ -546,7 +548,7 @@ export default function TakeExamPage() {
                 }}
                 className="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
               >
-                نعم، تسليم الآن
+                {t('نعم، تسليم الآن', 'Yes, submit now')}
               </button>
             </div>
           </div>

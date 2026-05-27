@@ -7,12 +7,14 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { uploadFileWithProgress } from '@/lib/upload-client';
 import { ACADEMIC_YEARS } from '@/lib/validations';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
-const instructorLinks = [
-  { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/instructor/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/instructor/courses/new', label: 'إنشاء كورس', icon: '➕' },
-  { href: '/dashboard/instructor/exams', label: 'الاختبارات', icon: '📝' },
+const defaultInstructorLinks = () => [
+  { href: '/dashboard/instructor', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+  { href: '/dashboard/instructor/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+  { href: '/dashboard/instructor/courses/new', label: t('إنشاء كورس', 'Create Course'), icon: '➕' },
+  { href: '/dashboard/instructor/exams', label: t('الاختبارات', 'Exams'), icon: '📝' },
 ];
 
 interface VideoControls {
@@ -42,6 +44,8 @@ interface Module {
 
 export default function CreateCoursePage() {
   const { data: session, status } = useSession();
+  useLang();
+  const instructorLinks = defaultInstructorLinks();
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -68,7 +72,7 @@ export default function CreateCoursePage() {
   });
 
   const createLesson = (type: Lesson['type'], index: number): Lesson => ({
-    title: `الدرس ${index}`,
+    title: `${t('الدرس', 'Lesson')} ${index}`,
     type,
     content: '',
     duration: type === 'video' ? 10 : 0,
@@ -77,13 +81,13 @@ export default function CreateCoursePage() {
   });
 
   const [modules, setModules] = useState<Module[]>([
-    { title: 'الوحدة 1', lessons: [createLesson('video', 1)] },
+    { title: t('الوحدة 1', 'Unit 1'), lessons: [createLesson('video', 1)] },
   ]);
 
   const addModule = () => {
     const newIndex = modules.length;
     setModules([...modules, {
-      title: `الوحدة ${newIndex + 1}`,
+      title: `${t('الوحدة', 'Unit')} ${newIndex + 1}`,
       lessons: [createLesson('video', 1)],
     }]);
     setExpandedModules((prev) => new Set([...prev, newIndex]));
@@ -111,7 +115,7 @@ export default function CreateCoursePage() {
     const source = updated[moduleIndex].lessons[lessonIndex];
     const clone: Lesson = {
       ...source,
-      title: source.title ? `${source.title} (نسخة)` : `الدرس ${updated[moduleIndex].lessons.length + 1}`,
+      title: source.title ? `${source.title} (${t('نسخة', 'copy')})` : `${t('الدرس', 'Lesson')} ${updated[moduleIndex].lessons.length + 1}`,
       file: undefined,
       previewUrl: undefined,
     };
@@ -131,7 +135,7 @@ export default function CreateCoursePage() {
   const applyQuickTemplate = () => {
     setModules([
       {
-        title: 'الوحدة 1',
+        title: t('الوحدة 1', 'Unit 1'),
         lessons: [
           createLesson('video', 1),
           createLesson('text', 2),
@@ -227,7 +231,7 @@ export default function CreateCoursePage() {
 
       const data = await res.json();
       if (!data.success) {
-        setError(data.error || 'فشل إنشاء الكورس');
+        setError(data.error || t('فشل إنشاء الكورس', 'Failed to create course'));
         return;
       }
 
@@ -256,7 +260,7 @@ export default function CreateCoursePage() {
         });
 
         if (!uploadData.success) {
-          setError(uploadData.error || 'فشل رفع أحد الملفات');
+          setError(uploadData.error || t('فشل رفع أحد الملفات', 'Failed to upload a file'));
           return;
         }
       }
@@ -264,7 +268,7 @@ export default function CreateCoursePage() {
       setUploadStatus(null);
       router.push('/dashboard/instructor/courses');
     } catch (err) {
-      setError('حدث خطأ ما');
+      setError(t('حدث خطأ ما', 'Something went wrong'));
     } finally {
       setSaving(false);
       setUploadStatus(null);
@@ -280,8 +284,8 @@ export default function CreateCoursePage() {
   return (
     <DashboardSidebar links={instructorLinks}>
       <div className="p-8 w-full max-w-4xl">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">إنشاء كورس جديد</h1>
-        <p className="text-slate-500 mb-8">املأ البيانات لإنشاء الكورس</p>
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">{t('إنشاء كورس جديد', 'Create New Course')}</h1>
+        <p className="text-slate-500 mb-8">{t('املأ البيانات لإنشاء الكورس', 'Fill in the details to create the course')}</p>
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6">{error}</div>
@@ -290,7 +294,7 @@ export default function CreateCoursePage() {
         {uploadStatus && (
           <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl mb-6">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span>جاري رفع: {uploadStatus.label}</span>
+              <span>{t('جاري رفع:', 'Uploading:')} {uploadStatus.label}</span>
               <span>{uploadStatus.percent}%</span>
             </div>
             <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
@@ -301,7 +305,7 @@ export default function CreateCoursePage() {
 
         {/* Step Indicator */}
         <div className="flex items-center gap-4 mb-8">
-          {['المعلومات الأساسية', 'المنهج', 'مراجعة'].map((label, i) => (
+          {[t('المعلومات الأساسية', 'Basic Info'), t('المنهج', 'Curriculum'), t('مراجعة', 'Review')].map((label, i) => (
             <button
               key={label}
               onClick={() => setStep(i + 1)}
@@ -325,47 +329,47 @@ export default function CreateCoursePage() {
         {step === 1 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">عنوان الكورس *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('عنوان الكورس', 'Course Title')} *</label>
               <input
                 type="text"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="مثال: دورة تطوير React الشاملة"
+                placeholder={t('مثال: دورة تطوير React الشاملة', 'Example: Complete React Development Course')}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">وصف مختصر *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('وصف مختصر', 'Short Description')} *</label>
               <input
                 type="text"
                 value={form.shortDescription}
                 onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
-                placeholder="وصف موجز في سطر واحد"
+                placeholder={t('وصف موجز في سطر واحد', 'Brief description in one line')}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">الوصف الكامل *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('الوصف الكامل', 'Full Description')} *</label>
               <textarea
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={5}
-                placeholder="وصف تفصيلي للكورس..."
+                placeholder={t('وصف تفصيلي للكورس...', 'Detailed course description...')}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">السنة الدراسية المستهدفة</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('السنة الدراسية المستهدفة', 'Target Academic Year')}</label>
                 <select
                   value={form.targetYear}
                   onChange={(e) => setForm({ ...form, targetYear: e.target.value })}
                   className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <option value="">للجميع</option>
+                  <option value="">{t('للجميع', 'For everyone')}</option>
                   {ACADEMIC_YEARS.map((y) => (
                     <option key={y.value} value={y.value}>{y.label}</option>
                   ))}
@@ -373,33 +377,33 @@ export default function CreateCoursePage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">التصنيف</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('التصنيف', 'Category')}</label>
                 <input
                   type="text"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  placeholder="مثال: البرمجة"
+                  placeholder={t('مثال: البرمجة', 'Example: Programming')}
                   className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">المستوى</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('المستوى', 'Level')}</label>
                 <select
                   value={form.level}
                   onChange={(e) => setForm({ ...form, level: e.target.value as any })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <option value="beginner">مبتدئ</option>
-                  <option value="intermediate">متوسط</option>
-                  <option value="advanced">متقدم</option>
+                  <option value="beginner">{t('مبتدئ', 'Beginner')}</option>
+                  <option value="intermediate">{t('متوسط', 'Intermediate')}</option>
+                  <option value="advanced">{t('متقدم', 'Advanced')}</option>
                 </select>
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">السعر (ج.م)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('السعر (ج.م)', 'Price (EGP)')}</label>
                 <input
                   type="number"
                   value={form.price}
@@ -409,7 +413,7 @@ export default function CreateCoursePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">سعر الخصم (ج.م)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('سعر الخصم (ج.م)', 'Discount Price (EGP)')}</label>
                 <input
                   type="number"
                   value={form.discountPrice}
@@ -421,34 +425,34 @@ export default function CreateCoursePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">الوسوم (مفصولة بفواصل)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('الوسوم (مفصولة بفواصل)', 'Tags (comma separated)')}</label>
               <input
                 type="text"
                 value={form.tags}
                 onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                placeholder="react, javascript, برمجة"
+                placeholder="react, javascript, programming"
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">المتطلبات (واحد في كل سطر)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('المتطلبات (واحد في كل سطر)', 'Requirements (one per line)')}</label>
               <textarea
                 value={form.requirements}
                 onChange={(e) => setForm({ ...form, requirements: e.target.value })}
                 rows={3}
-                placeholder="معرفة أساسية بـ HTML&#10;جهاز كمبيوتر متصل بالإنترنت"
+                placeholder="Basic HTML knowledge&#10;A computer with internet connection"
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">ماذا ستتعلم (واحد في كل سطر)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('ماذا ستتعلم (واحد في كل سطر)', 'What you will learn (one per line)')}</label>
               <textarea
                 value={form.whatYouWillLearn}
                 onChange={(e) => setForm({ ...form, whatYouWillLearn: e.target.value })}
                 rows={3}
-                placeholder="بناء تطبيقات React حقيقية&#10;فهم React Hooks"
+                placeholder="Build real React apps&#10;Understand React Hooks"
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
               />
             </div>
@@ -459,7 +463,7 @@ export default function CreateCoursePage() {
                 onClick={() => setStep(2)}
                 className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                التالي: المنهج →
+                {t('التالي: المنهج →', 'Next: Curriculum →')}
               </button>
             </div>
           </div>
@@ -470,15 +474,15 @@ export default function CreateCoursePage() {
           <div className="space-y-6">
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-blue-800">تجهيز سريع للمنهج</div>
-                <div className="text-xs text-blue-700">ابدأ بوحدة جاهزة (فيديو + نص + PDF) ثم عدّل بسهولة.</div>
+                <div className="text-sm font-semibold text-blue-800">{t('تجهيز سريع للمنهج', 'Quick Curriculum Setup')}</div>
+                <div className="text-xs text-blue-700">{t('ابدأ بوحدة جاهزة (فيديو + نص + PDF) ثم عدّل بسهولة.', 'Start with a ready unit (video + text + PDF) then edit easily.')}</div>
               </div>
               <button
                 type="button"
                 onClick={applyQuickTemplate}
                 className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                تطبيق قالب سريع
+                {t('تطبيق قالب سريع', 'Apply Quick Template')}
               </button>
             </div>
 
@@ -496,7 +500,7 @@ export default function CreateCoursePage() {
                       type="text"
                       value={module.title}
                       onChange={(e) => updateModule(mi, 'title', e.target.value)}
-                      placeholder="عنوان الوحدة"
+                      placeholder={t('عنوان الوحدة', 'Unit title')}
                       className="text-lg font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none px-1 py-0.5"
                     />
                   </div>
@@ -505,7 +509,7 @@ export default function CreateCoursePage() {
                     className="text-red-500 hover:text-red-700 text-sm"
                     disabled={modules.length <= 1}
                   >
-                    حذف
+                    {t('حذف', 'Delete')}
                   </button>
                 </div>
 
@@ -514,21 +518,21 @@ export default function CreateCoursePage() {
                   {module.lessons.map((lesson, li) => (
                     <div key={li} className="bg-gray-50 rounded-xl p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-slate-500">الدرس {li + 1}</span>
+                        <span className="text-xs font-medium text-slate-500">{t('الدرس', 'Lesson')} {li + 1}</span>
                         <div className="flex items-center gap-3">
                           <button
                             type="button"
                             onClick={() => duplicateLesson(mi, li)}
                             className="text-indigo-500 hover:text-indigo-700 text-xs"
                           >
-                            نسخ
+                            {t('نسخ', 'Duplicate')}
                           </button>
                           <button
                             onClick={() => removeLesson(mi, li)}
                             className="text-red-400 hover:text-red-600 text-xs"
                             disabled={module.lessons.length <= 1}
                           >
-                            حذف
+                            {t('حذف', 'Delete')}
                           </button>
                         </div>
                       </div>
@@ -537,7 +541,7 @@ export default function CreateCoursePage() {
                         type="text"
                         value={lesson.title}
                         onChange={(e) => updateLesson(mi, li, 'title', e.target.value)}
-                        placeholder="عنوان الدرس"
+                        placeholder={t('عنوان الدرس', 'Lesson title')}
                         className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                       />
 
@@ -563,16 +567,16 @@ export default function CreateCoursePage() {
                           }}
                           className="px-3 py-2 border rounded-lg text-sm"
                         >
-                          <option value="video">فيديو</option>
+                          <option value="video">{t('فيديو', 'Video')}</option>
                           <option value="pdf">PDF</option>
-                          <option value="text">نص</option>
+                          <option value="text">{t('نص', 'Text')}</option>
                         </select>
 
                         <input
                           type="number"
                           value={lesson.duration}
                           onChange={(e) => updateLesson(mi, li, 'duration', e.target.value)}
-                          placeholder="المدة (دقيقة)"
+                          placeholder={t('المدة (دقيقة)', 'Duration (min)')}
                           min={0}
                           className="px-3 py-2 border rounded-lg text-sm"
                         />
@@ -584,7 +588,7 @@ export default function CreateCoursePage() {
                             onChange={(e) => updateLesson(mi, li, 'isPreview', e.target.checked)}
                             className="rounded"
                           />
-                          معاينة مجانية
+                          {t('معاينة مجانية', 'Free preview')}
                         </label>
                       </div>
 
@@ -593,7 +597,7 @@ export default function CreateCoursePage() {
                           value={lesson.content}
                           onChange={(e) => updateLesson(mi, li, 'content', e.target.value)}
                           rows={4}
-                          placeholder="محتوى الدرس النصي (يدعم markdown)..."
+                          placeholder={t('محتوى الدرس النصي (يدعم markdown)...', 'Lesson text content (supports markdown)...')}
                           className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
                         />
                       ) : (
@@ -606,7 +610,7 @@ export default function CreateCoursePage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                             </svg>
                             <span className={lesson.file ? 'text-green-700 font-medium' : 'text-slate-500'}>
-                              {lesson.file ? `✓ ${lesson.file.name}` : `اختر ملف ${lesson.type === 'video' ? 'فيديو' : 'PDF'}`}
+                              {lesson.file ? `✓ ${lesson.file.name}` : `${t('اختر ملف', 'Choose file')} ${lesson.type === 'video' ? t('فيديو', 'video') : 'PDF'}`}
                             </span>
                           </label>
                           <input
@@ -639,16 +643,16 @@ export default function CreateCoursePage() {
                                 <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.21.08-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
                               </svg>
                             </div>
-                            <span className="text-xs font-semibold text-slate-700">إعدادات مشغّل الفيديو</span>
+                            <span className="text-xs font-semibold text-slate-700">{t('إعدادات مشغّل الفيديو', 'Video player settings')}</span>
                           </div>
                           <div className="divide-y divide-slate-100 bg-white">
                             {([
-                              { key: 'allowSpeed',      label: 'سرعة التشغيل',      desc: 'تحكم في سرعة عرض الفيديو',          path: 'M13 2.05v2.02c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93v2.02c5.05-.5 9-4.76 9-9.95S18.05 2.55 13 2.05zM7.1 18.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zm-1.6-3.85c-.6-1.04-.93-2.2-.93-3.47s.33-2.43.93-3.47L3.92 5.97A10.01 10.01 0 0 0 2 11h2c.12.97.37 1.84.69 2.65zM11 5.08V3.06C9.61 3.23 8.26 3.77 7.1 4.67L8.55 6.12C9.3 5.58 10.14 5.23 11 5.08z', iconCls: 'text-violet-600 bg-violet-50' },
-                              { key: 'allowSkip',       label: 'التخطي',             desc: 'تقديم ورجوع بمقدار 10 ثوانٍ',       path: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',                                                              iconCls: 'text-blue-600 bg-blue-50' },
-                              { key: 'allowSeek',       label: 'شريط التقدم',        desc: 'النقر للانتقال لأي لحظة',             path: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z',                                         iconCls: 'text-cyan-600 bg-cyan-50' },
-                              { key: 'allowVolume',     label: 'التحكم بالصوت',      desc: 'ضبط مستوى الصوت وكتمه',            path: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z',                                                                                        iconCls: 'text-green-600 bg-green-50' },
-                              { key: 'allowFullscreen', label: 'ملء الشاشة',         desc: 'مشاهدة الفيديو بالشاشة الكاملة',   path: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',                                                                                        iconCls: 'text-orange-600 bg-orange-50' },
-                              { key: 'forceFocus',      label: 'التركيز الإجباري',   desc: 'إيقاف الفيديو عند مغادرة التبويب', path: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z', iconCls: 'text-rose-600 bg-rose-50' },
+                              { key: 'allowSpeed',      label: t('سرعة التشغيل', 'Playback speed'),    desc: t('تحكم في سرعة عرض الفيديو', 'Control video playback speed'),       path: 'M13 2.05v2.02c3.95.49 7 3.85 7 7.93s-3.05 7.44-7 7.93v2.02c5.05-.5 9-4.76 9-9.95S18.05 2.55 13 2.05zM7.1 18.32c1.16.9 2.51 1.44 3.9 1.61V17.9c-.87-.15-1.71-.49-2.46-1.03L7.1 18.32zm-1.6-3.85c-.6-1.04-.93-2.2-.93-3.47s.33-2.43.93-3.47L3.92 5.97A10.01 10.01 0 0 0 2 11h2c.12.97.37 1.84.69 2.65zM11 5.08V3.06C9.61 3.23 8.26 3.77 7.1 4.67L8.55 6.12C9.3 5.58 10.14 5.23 11 5.08z', iconCls: 'text-violet-600 bg-violet-50' },
+                              { key: 'allowSkip',       label: t('التخطي', 'Skip'),               desc: t('تقديم ورجوع بمقدار 10 ثوانٍ', 'Forward and rewind 10 seconds'),       path: 'M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z',                                                              iconCls: 'text-blue-600 bg-blue-50' },
+                              { key: 'allowSeek',       label: t('شريط التقدم', 'Progress bar'),      desc: t('النقر للانتقال لأي لحظة', 'Click to jump to any moment'),           path: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z',                                         iconCls: 'text-cyan-600 bg-cyan-50' },
+                              { key: 'allowVolume',     label: t('التحكم بالصوت', 'Volume control'),    desc: t('ضبط مستوى الصوت وكتمه', 'Adjust and mute volume'),                path: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z',                                                                                        iconCls: 'text-green-600 bg-green-50' },
+                              { key: 'allowFullscreen', label: t('ملء الشاشة', 'Fullscreen'),         desc: t('مشاهدة الفيديو بالشاشة الكاملة', 'Watch video in fullscreen'),         path: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',                                                                                        iconCls: 'text-orange-600 bg-orange-50' },
+                              { key: 'forceFocus',      label: t('التركيز الإجباري', 'Force focus'),      desc: t('إيقاف الفيديو عند مغادرة التبويب', 'Pause video when leaving tab'),  path: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z', iconCls: 'text-rose-600 bg-rose-50' },
                             ] as { key: keyof VideoControls; label: string; desc: string; path: string; iconCls: string }[]).map(({ key: sk, label, desc, path, iconCls }) => (
                               <div key={sk} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors">
                                 <div className="flex items-center gap-2.5 min-w-0">
@@ -664,7 +668,7 @@ export default function CreateCoursePage() {
                                   type="button"
                                   onClick={() => updateLesson(mi, li, 'videoControls', { ...lesson.videoControls, [sk]: !lesson.videoControls[sk] })}
                                   className={`relative w-10 h-5 rounded-full transition-all duration-200 flex-shrink-0 ms-3 ${lesson.videoControls[sk] ? 'bg-blue-600' : 'bg-slate-200'}`}
-                                  title={lesson.videoControls[sk] ? 'تعطيل' : 'تفعيل'}
+                                  title={lesson.videoControls[sk] ? t('تعطيل', 'Disable') : t('تفعيل', 'Enable')}
                                 >
                                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-200 ${lesson.videoControls[sk] ? 'translate-x-5' : 'translate-x-0.5'}`} />
                                 </button>
@@ -682,21 +686,21 @@ export default function CreateCoursePage() {
                       onClick={() => addLessonWithType(mi, 'video')}
                       className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
                     >
-                      + درس فيديو
+                      + {t('درس فيديو', 'Video lesson')}
                     </button>
                     <button
                       type="button"
                       onClick={() => addLessonWithType(mi, 'text')}
                       className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
                     >
-                      + درس نصي
+                      + {t('درس نصي', 'Text lesson')}
                     </button>
                     <button
                       type="button"
                       onClick={() => addLessonWithType(mi, 'pdf')}
                       className="py-2 border-2 border-dashed rounded-xl text-sm text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
                     >
-                      + درس PDF
+                      + {t('درس PDF', 'PDF lesson')}
                     </button>
                   </div>
                 </div>
@@ -708,7 +712,7 @@ export default function CreateCoursePage() {
               onClick={addModule}
               className="w-full py-3 border-2 border-dashed rounded-2xl text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-colors font-medium"
             >
-              + إضافة وحدة
+            + {t('إضافة وحدة', 'Add unit')}
             </button>
 
             <div className="flex justify-between">
@@ -716,13 +720,13 @@ export default function CreateCoursePage() {
                 onClick={() => setStep(1)}
                 className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
               >
-                → رجوع
+                {t('← رجوع', '← Back')}
               </button>
               <button
                 onClick={() => setStep(3)}
                 className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
               >
-                التالي: مراجعة →
+                {t('التالي: مراجعة →', 'Next: Review →')}
               </button>
             </div>
           </div>
@@ -731,37 +735,37 @@ export default function CreateCoursePage() {
         {/* Step 3: Review */}
         {step === 3 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-6">مراجعة الكورس</h2>
+            <h2 className="text-lg font-semibold text-slate-900 mb-6">{t('مراجعة الكورس', 'Review Course')}</h2>
 
             <div className="space-y-4 mb-8">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-slate-500">العنوان:</span>
-                  <p className="font-medium text-slate-900">{form.title || 'غير محدد'}</p>
+                  <span className="text-slate-500">{t('العنوان:', 'Title:')}</span>
+                  <p className="font-medium text-slate-900">{form.title || t('غير محدد', 'Not set')}</p>
                 </div>
                 <div>
-                  <span className="text-slate-500">التصنيف:</span>
-                  <p className="font-medium text-slate-900">{form.category || 'غير محدد'}</p>
+                  <span className="text-slate-500">{t('التصنيف:', 'Category:')}</span>
+                  <p className="font-medium text-slate-900">{form.category || t('غير محدد', 'Not set')}</p>
                 </div>
                 <div>
-                  <span className="text-slate-500">المستوى:</span>
-                  <p className="font-medium text-slate-900 capitalize">{form.level === 'beginner' ? 'مبتدئ' : form.level === 'intermediate' ? 'متوسط' : 'متقدم'}</p>
+                  <span className="text-slate-500">{t('المستوى:', 'Level:')}</span>
+                  <p className="font-medium text-slate-900 capitalize">{form.level === 'beginner' ? t('مبتدئ', 'Beginner') : form.level === 'intermediate' ? t('متوسط', 'Intermediate') : t('متقدم', 'Advanced')}</p>
                 </div>
                 <div>
-                  <span className="text-slate-500">السعر:</span>
+                  <span className="text-slate-500">{t('السعر:', 'Price:')}</span>
                   <p className="font-medium text-slate-900">
-                    {form.price === 0 ? 'مجاني' : `${form.price} ج.م`}
-                    {form.discountPrice > 0 && ` (خصم: ${form.discountPrice} ج.م)`}
+                    {form.price === 0 ? t('مجاني', 'Free') : `${form.price} ${t('ج.م', 'EGP')}`}
+                    {form.discountPrice > 0 && ` (${t('خصم:', 'discount:')} ${form.discountPrice} ${t('ج.م', 'EGP')})`}
                   </p>
                 </div>
               </div>
 
               <div>
-                <span className="text-sm text-slate-500">الوحدات: {modules.length}</span>
+                <span className="text-sm text-slate-500">{t('الوحدات:', 'Units:')} {modules.length}</span>
                 <div className="mt-2 space-y-2">
                   {modules.map((m, i) => (
                     <div key={i} className="text-sm text-slate-700">
-                      {i + 1}. {m.title || 'بدون عنوان'} ({m.lessons.length} درس)
+                      {i + 1}. {m.title || t('بدون عنوان', 'Untitled')} ({m.lessons.length} {t('درس', 'lesson')})
                     </div>
                   ))}
                 </div>
@@ -773,7 +777,7 @@ export default function CreateCoursePage() {
                 onClick={() => setStep(2)}
                 className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
               >
-                → رجوع
+                {t('← رجوع', '← Back')}
               </button>
               <div className="flex gap-3">
                 <button
@@ -781,14 +785,14 @@ export default function CreateCoursePage() {
                   disabled={saving}
                   className="px-6 py-3 bg-slate-200 text-slate-800 rounded-xl hover:bg-slate-300 transition-colors font-medium disabled:opacity-50"
                 >
-                  حفظ كمسودة
+                  {t('حفظ كمسودة', 'Save as Draft')}
                 </button>
                 <button
                   onClick={() => handleSubmit(true)}
                   disabled={saving}
                   className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
                 >
-                  {saving ? 'جاري الإنشاء...' : 'نشر الكورس'}
+                  {saving ? t('جاري الإنشاء...', 'Creating...') : t('نشر الكورس', 'Publish Course')}
                 </button>
               </div>
             </div>

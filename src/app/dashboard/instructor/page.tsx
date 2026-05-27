@@ -11,11 +11,16 @@ import { MiniBarChart, MiniLineChart } from '@/components/analytics/Charts';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
 import { useLang } from '@/contexts/LanguageContext';
-import { instructorLinks } from '@/lib/nav-links';
 
 export default function InstructorDashboard() {
-  useLang(); // re-render on language toggle
+  useLang();
   const { data: session, status } = useSession();
+  const instructorLinks = [
+    { href: '/dashboard/instructor', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/instructor/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/instructor/courses/new', label: t('إنشاء كورس', 'Create Course'), icon: '➕' },
+    { href: '/dashboard/instructor/exams', label: t('الاختبارات', 'Exams'), icon: '📝' },
+  ];
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -42,22 +47,22 @@ export default function InstructorDashboard() {
   };
 
   const courseColumns = [
-    { header: t('اسم الكورس', 'Course Name'),       value: (r: any) => r.title },
-    { header: t('الحالة', 'Status'),                 value: (r: any) => (r.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')) },
-    { header: t('عدد الطلاب', 'Students'),       value: (r: any) => r.enrollments },
-    { header: t('متوسط التقدم %', 'Avg. Progress %'), value: (r: any) => r.avgProgress },
-    { header: t('الإيراد', 'Revenue'),                value: (r: any) => r.revenue },
-    { header: t('عدد المدفوعات', 'Payments'),  value: (r: any) => r.paymentsCount },
+    { header: t('اسم الكورس', 'Course Name'), value: (r: any) => r.title },
+    { header: t('الحالة', 'Status'), value: (r: any) => (r.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')) },
+    { header: t('عدد الطلاب', 'Students'), value: (r: any) => r.enrollments },
+    { header: t('متوسط التقدم %', 'Avg Progress %'), value: (r: any) => r.avgProgress },
+    { header: t('الإيراد', 'Revenue'), value: (r: any) => r.revenue },
+    { header: t('عدد المدفوعات', 'Payments'), value: (r: any) => r.paymentsCount },
   ];
 
   const examColumns = [
-    { header: t('اسم الاختبار', 'Exam Name'),     value: (r: any) => r.title },
-    { header: t('مرتبط بكورس', 'Linked Course'),     value: (r: any) => r.courseTitle || '-' },
-    { header: t('الحالة', 'Status'),                 value: (r: any) => (r.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')) },
+    { header: t('اسم الاختبار', 'Exam Name'), value: (r: any) => r.title },
+    { header: t('مرتبط بكورس', 'Linked Course'), value: (r: any) => r.courseTitle || '-' },
+    { header: t('الحالة', 'Status'), value: (r: any) => (r.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')) },
     { header: t('عدد المحاولات', 'Attempts'), value: (r: any) => r.attempts },
-    { header: t('متوسط الدرجة %', 'Avg. Score %'), value: (r: any) => r.avgScore },
-    { header: t('معدل النجاح %', 'Pass Rate %'),     value: (r: any) => r.passRate },
-    { header: t('الإيراد', 'Revenue'),                value: (r: any) => r.revenue },
+    { header: t('متوسط الدرجة %', 'Avg Score %'), value: (r: any) => r.avgScore },
+    { header: t('معدل النجاح %', 'Pass Rate %'), value: (r: any) => r.passRate },
+    { header: t('الإيراد', 'Revenue'), value: (r: any) => r.revenue },
   ];
 
   const exportCoursesExcel = async () => {
@@ -81,7 +86,7 @@ export default function InstructorDashboard() {
   };
 
   return (
-    <DashboardSidebar links={instructorLinks()}>
+    <DashboardSidebar links={instructorLinks}>
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold text-slate-900">{t('لوحة تحكم المحاضر', 'Instructor Dashboard')}</h1>
@@ -114,7 +119,7 @@ export default function InstructorDashboard() {
               href="/dashboard/instructor/courses/new"
               className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
             >
-              {t('+ كورس جديد', '+ New Course')}
+              + {t('كورس جديد', 'New Course')}
             </Link>
           </div>
         </div>
@@ -236,7 +241,7 @@ export default function InstructorDashboard() {
                       <th className="px-4 py-3">{t('الكورس', 'Course')}</th>
                       <th className="px-4 py-3">{t('الحالة', 'Status')}</th>
                       <th className="px-4 py-3">{t('عدد الطلاب', 'Students')}</th>
-                      <th className="px-4 py-3">{t('متوسط التقدم', 'Avg. Progress')}</th>
+                      <th className="px-4 py-3">{t('متوسط التقدم', 'Avg Progress')}</th>
                       <th className="px-4 py-3">{t('الإيراد', 'Revenue')}</th>
                       <th className="px-4 py-3">{t('إجراءات', 'Actions')}</th>
                     </tr>
@@ -274,7 +279,7 @@ export default function InstructorDashboard() {
                       <th className="px-4 py-3">{t('الاختبار', 'Exam')}</th>
                       <th className="px-4 py-3">{t('الكورس المرتبط', 'Linked Course')}</th>
                       <th className="px-4 py-3">{t('المحاولات', 'Attempts')}</th>
-                      <th className="px-4 py-3">{t('متوسط الدرجة', 'Avg. Score')}</th>
+                      <th className="px-4 py-3">{t('متوسط الدرجة', 'Avg Score')}</th>
                       <th className="px-4 py-3">{t('معدل النجاح', 'Pass Rate')}</th>
                       <th className="px-4 py-3">{t('الإيراد', 'Revenue')}</th>
                     </tr>
@@ -283,7 +288,7 @@ export default function InstructorDashboard() {
                     {(stats.analytics?.examPerformance || []).map((exam: any) => (
                       <tr key={exam.examId} className="text-sm">
                         <td className="px-4 py-3 font-medium text-accent-900">{exam.title}</td>
-                        <td className="px-4 py-3 text-accent-700">{exam.courseTitle || t('اختبار مستقل', 'Standalone Exam')}</td>
+                        <td className="px-4 py-3 text-accent-700">{exam.courseTitle || t('اختبار مستقل', 'Independent Exam')}</td>
                         <td className="px-4 py-3 text-accent-700">{exam.attempts}</td>
                         <td className="px-4 py-3 text-accent-700">{exam.avgScore}%</td>
                         <td className="px-4 py-3 text-accent-700">{exam.passRate}%</td>

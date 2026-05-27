@@ -156,7 +156,7 @@ export async function makeAttempt(opts: {
   });
   if (opts.createdAt) {
     await ExamAttempt.updateOne({ _id: doc._id }, { $set: { createdAt: opts.createdAt } });
-    doc.createdAt = opts.createdAt;
+    (doc as any).createdAt = opts.createdAt;
   }
   return doc;
 }

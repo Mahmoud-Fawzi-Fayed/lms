@@ -7,16 +7,17 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
-
-const instructorLinks = [
-  { href: '/dashboard/instructor', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/instructor/courses', label: 'كورساتي', icon: '📚' },
-  { href: '/dashboard/instructor/courses/new', label: 'إنشاء كورس', icon: '➕' },
-  { href: '/dashboard/instructor/exams', label: 'الاختبارات', icon: '📝' },
-];
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function InstructorCoursesPage() {
+  useLang();
   const { data: session, status } = useSession();
+  const instructorLinks = [
+    { href: '/dashboard/instructor', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/instructor/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/instructor/courses/new', label: t('إنشاء كورس', 'Create Course'), icon: '➕' },
+    { href: '/dashboard/instructor/exams', label: t('الاختبارات', 'Exams'), icon: '📝' },
+  ];
   const router = useRouter();
   const [courses, setCourses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,7 +42,7 @@ export default function InstructorCoursesPage() {
   };
 
   const deleteCourse = async (courseId: string) => {
-    if (!confirm('هل أنت متأكد من حذف هذا الكورس؟')) return;
+    if (!confirm(t('هل أنت متأكد من حذف هذا الكورس؟', 'Are you sure you want to delete this course?'))) return;
     try {
       const res = await fetch(`/api/courses/${courseId}`, { method: 'DELETE' });
       const data = await res.json();
@@ -60,12 +61,12 @@ export default function InstructorCoursesPage() {
     <DashboardSidebar links={instructorLinks}>
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-slate-900">كورساتي</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{t('كورساتي', 'My Courses')}</h1>
           <Link
             href="/dashboard/instructor/courses/new"
             className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
           >
-            + كورس جديد
+            {t('+ كورس جديد', '+ New Course')}
           </Link>
         </div>
 
@@ -89,15 +90,15 @@ export default function InstructorCoursesPage() {
                 <div className="p-5">
                   <h3 className="font-semibold text-slate-900 mb-1 line-clamp-1">{course.title}</h3>
                   <div className="flex items-center gap-3 text-sm text-slate-500 mb-3">
-                    <span>{course.modules?.length || 0} وحدة</span>
+                    <span>{course.modules?.length || 0} {t('وحدة', 'units')}</span>
                     <span>·</span>
-                    <span>{course.enrollmentCount || 0} طالب</span>
+                    <span>{course.enrollmentCount || 0} {t('طالب', 'students')}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                       course.isPublished ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                     }`}>
-                      {course.isPublished ? 'منشور' : 'مسودة'}
+                      {course.isPublished ? t('منشور', 'Published') : t('مسودة', 'Draft')}
                     </span>
                     <div className="flex items-center gap-3">
                       <button
@@ -105,19 +106,19 @@ export default function InstructorCoursesPage() {
                         onClick={() => deleteCourse(course._id)}
                         className="text-sm text-red-600 font-medium hover:underline"
                       >
-                        حذف
+                        {t('حذف', 'Delete')}
                       </button>
                       <Link
                         href={`/dashboard/instructor/courses/${course._id}/stats`}
                         className="text-sm text-purple-600 font-medium hover:underline"
                       >
-                        إحصائيات
+                        {t('إحصائيات', 'Stats')}
                       </Link>
                       <Link
                         href={`/dashboard/instructor/courses/${course._id}`}
                         className="text-sm text-blue-600 font-medium hover:underline"
                       >
-                        تعديل ←
+                        {t('تعديل ←', 'Edit ←')}
                       </Link>
                     </div>
                   </div>
@@ -128,13 +129,13 @@ export default function InstructorCoursesPage() {
         ) : (
           <div className="text-center py-16 bg-white rounded-2xl border">
             <span className="text-5xl mb-4 block">📚</span>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">لا توجد كورسات بعد</h3>
-            <p className="text-slate-500 mb-4">أنشئ أول كورس للبدء</p>
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا توجد كورسات بعد', 'No courses yet')}</h3>
+            <p className="text-slate-500 mb-4">{t('أنشئ أول كورس للبدء', 'Create your first course to get started')}</p>
             <Link
               href="/dashboard/instructor/courses/new"
               className="inline-flex px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium text-sm"
             >
-              إنشاء كورس
+              {t('إنشاء كورس', 'Create Course')}
             </Link>
           </div>
         )}

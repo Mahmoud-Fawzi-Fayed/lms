@@ -7,16 +7,18 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { MiniBarChart, MiniLineChart } from '@/components/analytics/Charts';
 import { formatPrice } from '@/lib/utils';
 import { exportToPdf } from '@/lib/export-utils';
-
-const adminLinks = [
-  { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/admin/users', label: 'المستخدمين', icon: '👥' },
-  { href: '/dashboard/admin/courses', label: 'الكورسات', icon: '📚' },
-  { href: '/dashboard/admin/payments', label: 'المدفوعات', icon: '💳' },
-];
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function AdminCourseStatsPage() {
   const { data: session, status } = useSession();
+  useLang();
+  const adminLinks = [
+    { href: '/dashboard/admin', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/admin/users', label: t('المستخدمين', 'Users'), icon: '👥' },
+    { href: '/dashboard/admin/courses', label: t('الكورسات', 'Courses'), icon: '📚' },
+    { href: '/dashboard/admin/payments', label: t('المدفوعات', 'Payments'), icon: '💳' },
+  ];
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
@@ -48,14 +50,14 @@ export default function AdminCourseStatsPage() {
     const rows = data?.students || [];
     await exportToPdf(
       `course-${params.id}-students.pdf`,
-      `إحصائيات طلاب الكورس: ${data?.course?.title || ''}`,
+      `${t('إحصائيات طلاب الكورس:', 'Course Students Stats:')} ${data?.course?.title || ''}`,
       rows,
       [
-        { header: 'الاسم', value: (r: any) => r.name },
-        { header: 'البريد', value: (r: any) => r.email },
-        { header: 'نسبة التقدم', value: (r: any) => `${r.progress}%` },
-        { header: 'الحالة', value: (r: any) => r.status },
-        { header: 'تاريخ التسجيل', value: (r: any) => new Date(r.enrolledAt).toLocaleDateString('ar-EG') },
+        { header: t('الاسم', 'Name'), value: (r: any) => r.name },
+        { header: t('البريد', 'Email'), value: (r: any) => r.email },
+        { header: t('نسبة التقدم', 'Progress %'), value: (r: any) => `${r.progress}%` },
+        { header: t('الحالة', 'Status'), value: (r: any) => r.status },
+        { header: t('تاريخ التسجيل', 'Enrollment Date'), value: (r: any) => new Date(r.enrolledAt).toLocaleDateString('ar-EG') },
       ]
     );
   };
@@ -65,7 +67,7 @@ export default function AdminCourseStatsPage() {
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">إحصائيات الكورس</h1>
+            <h1 className="text-2xl font-bold text-slate-900">{t('إحصائيات الكورس', 'Course Statistics')}</h1>
             {data?.course && <p className="text-slate-500 mt-1">{data.course.title}</p>}
           </div>
           <button
@@ -73,48 +75,48 @@ export default function AdminCourseStatsPage() {
             disabled={!data}
             className="px-4 py-2 bg-white border border-accent-200 text-accent-700 rounded-lg hover:bg-accent-50 text-sm disabled:opacity-50"
           >
-            تصدير الطلاب PDF
+            {t('تصدير الطلاب PDF', 'Export Students PDF')}
           </button>
         </div>
 
         {loading ? (
-          <div className="text-slate-500">جاري التحميل...</div>
+          <div className="text-slate-500">{t('جاري التحميل...', 'Loading...')}</div>
         ) : !data ? (
-          <div className="text-slate-500">تعذر تحميل الإحصائيات</div>
+          <div className="text-slate-500">{t('تعذر تحميل الإحصائيات', 'Failed to load statistics')}</div>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6 mb-8">
-              <Card title="عدد الطلاب" value={data.stats.totalEnrollments} />
-              <Card title="عدد الاختبارات" value={data.stats.totalExams} />
-              <Card title="محاولات الاختبار" value={data.stats.totalExamAttempts} />
-              <Card title="عدد المدفوعات" value={data.stats.paidPaymentsCount} />
-              <Card title="إجمالي الإيراد" value={formatPrice(data.stats.totalRevenue)} />
-              <Card title="متوسط التقدم" value={`${data.stats.avgProgress}%`} />
+              <Card title={t('عدد الطلاب', 'Students')} value={data.stats.totalEnrollments} />
+              <Card title={t('عدد الاختبارات', 'Exams')} value={data.stats.totalExams} />
+              <Card title={t('محاولات الاختبار', 'Exam Attempts')} value={data.stats.totalExamAttempts} />
+              <Card title={t('عدد المدفوعات', 'Payments')} value={data.stats.paidPaymentsCount} />
+              <Card title={t('إجمالي الإيراد', 'Total Revenue')} value={formatPrice(data.stats.totalRevenue)} />
+              <Card title={t('متوسط التقدم', 'Avg Progress')} value={`${data.stats.avgProgress}%`} />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
-              <Panel title="اتجاه التسجيلات">
+              <Panel title={t('اتجاه التسجيلات', 'Enrollment Trend')}>
                 <MiniLineChart data={data.trends.enrollments} />
               </Panel>
-              <Panel title="اتجاه المدفوعات">
+              <Panel title={t('اتجاه المدفوعات', 'Payment Trend')}>
                 <MiniLineChart data={data.trends.payments} stroke="#14b8a6" />
               </Panel>
-              <Panel title="اتجاه الإيراد">
+              <Panel title={t('اتجاه الإيراد', 'Revenue Trend')}>
                 <MiniBarChart data={data.trends.revenue} color="bg-emerald-500" />
               </Panel>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-              <h2 className="font-semibold text-slate-900 mb-4">أفضل الطلاب حسب التقدم</h2>
+              <h2 className="font-semibold text-slate-900 mb-4">{t('أفضل الطلاب حسب التقدم', 'Top Students by Progress')}</h2>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px]">
                   <thead>
                     <tr className="text-right bg-accent-50 text-xs text-accent-500">
-                      <th className="px-4 py-3">الطالب</th>
-                      <th className="px-4 py-3">البريد</th>
-                      <th className="px-4 py-3">نسبة التقدم</th>
-                      <th className="px-4 py-3">الحالة</th>
-                      <th className="px-4 py-3">تاريخ التسجيل</th>
+                      <th className="px-4 py-3">{t('الطالب', 'Student')}</th>
+                      <th className="px-4 py-3">{t('البريد', 'Email')}</th>
+                      <th className="px-4 py-3">{t('نسبة التقدم', 'Progress %')}</th>
+                      <th className="px-4 py-3">{t('الحالة', 'Status')}</th>
+                      <th className="px-4 py-3">{t('تاريخ التسجيل', 'Enrollment Date')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-accent-100">

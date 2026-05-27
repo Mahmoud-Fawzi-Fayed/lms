@@ -8,26 +8,47 @@ function normalizeCell(value: string | number | null | undefined): string | numb
   return typeof value === 'number' ? value : String(value);
 }
 
+function downloadBlob(fileName: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
 export async function exportToExcel<T>(
   fileName: string,
   sheetName: string,
   rows: T[],
   columns: ExportColumn<T>[]
 ) {
-  const XLSX = await import('xlsx');
+  const { Workbook } = await import('exceljs');
+  const workbook = new Workbook();
+  const worksheet = workbook.addWorksheet(sheetName || 'Sheet1');
 
-  const data = rows.map((row) => {
+  worksheet.columns = columns.map((col) => ({
+    header: col.header,
+    key: col.header,
+    width: Math.max(14, col.header.length + 4),
+  }));
+
+  for (const row of rows) {
     const item: Record<string, string | number> = {};
     for (const col of columns) {
       item[col.header] = normalizeCell(col.value(row));
     }
-    return item;
-  });
+    worksheet.addRow(item);
+  }
 
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  XLSX.writeFile(workbook, fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`);
+  const safeName = fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`;
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  downloadBlob(safeName, blob);
 }
 
 export async function exportToPdf<T>(

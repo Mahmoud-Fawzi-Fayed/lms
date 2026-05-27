@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export interface VideoControls {
   allowSpeed?: boolean;
@@ -23,6 +25,7 @@ interface SecureVideoPlayerProps {
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export default function SecureVideoPlayer({ src, title, controls, onProgress, onComplete }: SecureVideoPlayerProps) {
+  useLang();
   const allowSpeed      = controls?.allowSpeed      !== false;
   const allowSkip       = controls?.allowSkip       !== false;
   const allowFullscreen = controls?.allowFullscreen !== false;
@@ -54,6 +57,8 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
   const [skipFlash,     setSkipFlash]    = useState<'+10' | '-10' | null>(null);
   const [showControls,  setShowControls] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressEmitRef = useRef(0);
+  const lockChannelRef = useRef<BroadcastChannel | null>(null);
 
   // ── Dynamic user watermark (deters screenshot sharing) ───────────────────
   const { data: sessionData } = useSession();
@@ -71,10 +76,11 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
   useEffect(() => {
     if (!forceFocus) return;
     const pause = () => { videoRef.current?.pause(); };
-    document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+    const onVisibilityChange = () => { if (document.hidden) pause(); };
+    document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', pause);
     return () => {
-      document.removeEventListener('visibilitychange', pause);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', pause);
     };
   }, [forceFocus]);
@@ -91,6 +97,7 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
     if (typeof BroadcastChannel === 'undefined') return;
     tabIdRef.current = Math.random().toString(36).slice(2);
     const ch = new BroadcastChannel('lms-video-lock');
+    lockChannelRef.current = ch;
     const onMessage = (e: MessageEvent) => {
       const msg = e.data;
       if (!msg || msg.tabId === tabIdRef.current) return;
@@ -107,21 +114,16 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
       ch.postMessage({ type: 'release', tabId: tabIdRef.current });
       ch.removeEventListener('message', onMessage);
       ch.close();
+      lockChannelRef.current = null;
     };
   }, []);
 
   const broadcastPlay = useCallback(() => {
-    if (typeof BroadcastChannel === 'undefined') return;
-    const ch = new BroadcastChannel('lms-video-lock');
-    ch.postMessage({ type: 'claim', tabId: tabIdRef.current });
-    ch.close();
+    lockChannelRef.current?.postMessage({ type: 'claim', tabId: tabIdRef.current });
     setOtherTabPlaying(false);
   }, []);
   const broadcastPause = useCallback(() => {
-    if (typeof BroadcastChannel === 'undefined') return;
-    const ch = new BroadcastChannel('lms-video-lock');
-    ch.postMessage({ type: 'release', tabId: tabIdRef.current });
-    ch.close();
+    lockChannelRef.current?.postMessage({ type: 'release', tabId: tabIdRef.current });
   }, []);
 
   // ── Auto-hide controls overlay ────────────────────────────────────────────
@@ -141,7 +143,11 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
         case ' ':
         case 'k':
           e.preventDefault();
-          videoRef.current?.paused ? videoRef.current.play() : videoRef.current?.pause();
+          if (videoRef.current?.paused) {
+            videoRef.current.play();
+          } else {
+            videoRef.current?.pause();
+          }
           break;
         case 'ArrowRight':
           if (allowSkip) { e.preventDefault(); skip(10); }
@@ -175,12 +181,24 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
+
   // ── Video event handlers ─────────────────────────────────────────────────
   const onTimeUpdate = () => {
     const v = videoRef.current;
     if (!v) return;
     setCurrentTime(v.currentTime);
-    onProgress?.(v.currentTime, v.duration);
+    if (onProgress) {
+      const now = performance.now();
+      if (now - progressEmitRef.current >= 400 || v.currentTime >= v.duration - 0.25) {
+        progressEmitRef.current = now;
+        onProgress(v.currentTime, v.duration);
+      }
+    }
   };
 
   const onEnded = () => {
@@ -192,7 +210,11 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    v.paused ? v.play() : v.pause();
+    if (v.paused) {
+      v.play();
+    } else {
+      v.pause();
+    }
   };
 
   const skip = (secs: number) => {
@@ -303,6 +325,7 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
         onDurationChange={e => setDuration((e.target as HTMLVideoElement).duration)}
         onWaiting={() => setBuffering(true)}
         onCanPlay={() => setBuffering(false)}
+        onPlaying={() => setBuffering(false)}
         onEnded={onEnded}
         onVolumeChange={e => { const v = e.target as HTMLVideoElement; setVolume(v.volume); setMuted(v.muted); }}
       />
@@ -340,8 +363,8 @@ export default function SecureVideoPlayer({ src, title, controls, onProgress, on
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 text-white text-sm md:text-base text-center px-6">
           <div>
             <div className="text-3xl mb-2">⏸</div>
-            <div>تشغيل الفيديو متوقّف لأنه يتم تشغيله في علامة تبويب أخرى.</div>
-            <div className="opacity-70 mt-1">أغلق علامات التبويب الأخرى ثم اضغط تشغيل من هنا.</div>
+            <div>{t('تشغيل الفيديو متوقّف لأنه يتم تشغيله في علامة تبويب أخرى.', 'Video is paused because it is playing in another tab.')}</div>
+            <div className="opacity-70 mt-1">{t('أغلق علامات التبويب الأخرى ثم اضغط تشغيل من هنا.', 'Close other tabs then press play here.')}</div>
           </div>
         </div>
       )}

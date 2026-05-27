@@ -7,8 +7,10 @@ import Navbar from '@/components/Navbar';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function LeaderboardPage() {
+  useLang();
   const { id } = useParams();
   const { data: session } = useSession();
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
@@ -61,8 +63,8 @@ export default function LeaderboardPage() {
         <div className="max-w-3xl mx-auto px-4 py-12">
           {/* Header */}
           <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold text-slate-900 mb-2">🏆 قائمة المتفوقين</h1>
-            <p className="text-slate-600">أفضل المتقدمين في هذا الاختبار</p>
+            <h1 className="text-3xl font-bold text-slate-900 mb-2">{t('🏆 قائمة المتفوقين', '🏆 Leaderboard')}</h1>
+            <p className="text-slate-600">{t('أفضل المتقدمين في هذا الاختبار', 'Top performers in this exam')}</p>
           </div>
 
           {loading ? (
@@ -80,8 +82,8 @@ export default function LeaderboardPage() {
           ) : leaderboard.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl">
               <div className="text-5xl mb-4">📊</div>
-              <h3 className="text-lg font-semibold text-slate-900 mb-2">لا توجد نتائج بعد</h3>
-              <p className="text-slate-600">كن أول من يخوض هذا الاختبار!</p>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">{t('لا توجد نتائج بعد', 'No results yet')}</h3>
+              <p className="text-slate-600">{t('كن أول من يخوض هذا الاختبار!', 'Be the first to take this exam!')}</p>
             </div>
           ) : (
             <>
@@ -144,11 +146,11 @@ export default function LeaderboardPage() {
               {/* Full List */}
               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50 text-sm font-medium text-slate-600 border-b">
-                  <div className="col-span-1">الترتيب</div>
-                  <div className="col-span-5">الطالب</div>
-                  <div className="col-span-2 text-center">الدرجة</div>
-                  <div className="col-span-2 text-center">المحاولات</div>
-                  <div className="col-span-2 text-center">الحالة</div>
+                  <div className="col-span-1">{t('الترتيب', 'Rank')}</div>
+                  <div className="col-span-5">{t('الطالب', 'Student')}</div>
+                  <div className="col-span-2 text-center">{t('الدرجة', 'Score')}</div>
+                  <div className="col-span-2 text-center">{t('المحاولات', 'Attempts')}</div>
+                  <div className="col-span-2 text-center">{t('الحالة', 'Status')}</div>
                 </div>
 
                 {leaderboard.map((entry, i) => {
@@ -173,7 +175,7 @@ export default function LeaderboardPage() {
                           </span>
                         </div>
                         <span className={`font-medium ${isCurrentUser ? 'text-blue-700' : 'text-slate-900'}`}>
-                          {entry.name} {isCurrentUser && '(أنت)'}
+                          {entry.name} {isCurrentUser && `(${t('أنت', 'You')})`}
                         </span>
                       </div>
                       <div className="col-span-2 text-center">
@@ -190,7 +192,7 @@ export default function LeaderboardPage() {
                               : 'bg-red-100 text-red-700'
                           }`}
                         >
-                          {entry.passed ? 'ناجح' : 'راسب'}
+                          {entry.passed ? t('ناجح', 'Passed') : t('راسب', 'Failed')}
                         </span>
                       </div>
                     </div>
@@ -205,7 +207,7 @@ export default function LeaderboardPage() {
               onClick={() => window.history.back()}
               className="px-6 py-2 border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors"
             >
-              ← رجوع
+              ← {t('رجوع', 'Back')}
             </button>
           </div>
         </div>

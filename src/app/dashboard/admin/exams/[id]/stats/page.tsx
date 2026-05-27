@@ -7,16 +7,18 @@ import DashboardSidebar from '@/components/DashboardSidebar';
 import { MiniBarChart, MiniLineChart } from '@/components/analytics/Charts';
 import { formatPrice } from '@/lib/utils';
 import { exportToPdf } from '@/lib/export-utils';
-
-const adminLinks = [
-  { href: '/dashboard/admin', label: 'لوحة التحكم', icon: '📊' },
-  { href: '/dashboard/admin/users', label: 'المستخدمين', icon: '👥' },
-  { href: '/dashboard/admin/courses', label: 'الكورسات', icon: '📚' },
-  { href: '/dashboard/admin/payments', label: 'المدفوعات', icon: '💳' },
-];
+import { t } from '@/lib/i18n';
+import { useLang } from '@/contexts/LanguageContext';
 
 export default function AdminExamStatsPage() {
   const { data: session, status } = useSession();
+  useLang();
+  const adminLinks = [
+    { href: '/dashboard/admin', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/admin/users', label: t('المستخدمين', 'Users'), icon: '👥' },
+    { href: '/dashboard/admin/courses', label: t('الكورسات', 'Courses'), icon: '📚' },
+    { href: '/dashboard/admin/payments', label: t('المدفوعات', 'Payments'), icon: '💳' },
+  ];
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<any>(null);
@@ -46,14 +48,14 @@ export default function AdminExamStatsPage() {
     const rows = data?.topResults || [];
     await exportToPdf(
       `exam-${params.id}-top-results.pdf`,
-      `إحصائيات نتائج الاختبار: ${data?.exam?.title || ''}`,
+      `${t('إحصائيات نتائج الاختبار:', 'Exam Results Stats:')} ${data?.exam?.title || ''}`,
       rows,
       [
-        { header: 'الاسم', value: (r: any) => r.name },
-        { header: 'البريد', value: (r: any) => r.email },
-        { header: 'أفضل درجة', value: (r: any) => `${r.bestScore}%` },
-        { header: 'أسرع وقت (د)', value: (r: any) => Math.round((r.fastestTime || 0) / 60) },
-        { header: 'عدد المحاولات', value: (r: any) => r.attempts },
+        { header: t('الاسم', 'Name'), value: (r: any) => r.name },
+        { header: t('البريد', 'Email'), value: (r: any) => r.email },
+        { header: t('أفضل درجة', 'Best Score'), value: (r: any) => `${r.bestScore}%` },
+        { header: t('أسرع وقت (د)', 'Fastest Time (m)'), value: (r: any) => Math.round((r.fastestTime || 0) / 60) },
+        { header: t('عدد المحاولات', 'Attempts'), value: (r: any) => r.attempts },
       ]
     );
   };
@@ -63,7 +65,7 @@ export default function AdminExamStatsPage() {
       <div className="p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">إحصائيات الاختبار</h1>
+            <h1 className="text-2xl font-bold text-slate-900">{t('إحصائيات الاختبار', 'Exam Statistics')}</h1>
             {data?.exam && <p className="text-slate-500 mt-1">{data.exam.title}</p>}
           </div>
           <button
@@ -71,50 +73,50 @@ export default function AdminExamStatsPage() {
             disabled={!data}
             className="px-4 py-2 bg-white border border-accent-200 text-accent-700 rounded-lg hover:bg-accent-50 text-sm disabled:opacity-50"
           >
-            تصدير النتائج PDF
+            {t('تصدير النتائج PDF', 'Export Results PDF')}
           </button>
         </div>
 
         {loading ? (
-          <div className="text-slate-500">جاري التحميل...</div>
+          <div className="text-slate-500">{t('جاري التحميل...', 'Loading...')}</div>
         ) : !data ? (
-          <div className="text-slate-500">تعذر تحميل الإحصائيات</div>
+          <div className="text-slate-500">{t('تعذر تحميل الإحصائيات', 'Failed to load statistics')}</div>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-6 mb-8">
-              <Card title="المحاولات" value={data.stats.attempts} />
-              <Card title="المشاركون" value={data.stats.uniqueParticipants} />
-              <Card title="متوسط الدرجة" value={`${data.stats.avgScore}%`} />
-              <Card title="معدل النجاح" value={`${data.stats.passRate}%`} />
-              <Card title="متوسط الوقت" value={`${data.stats.avgTimeMinutes} د`} />
-              <Card title="اشتراكات الاختبار" value={data.stats.enrollmentCount} />
-              <Card title="مدفوعات ناجحة" value={data.stats.paidPaymentsCount} />
-              <Card title="إيراد" value={formatPrice(data.stats.totalRevenue)} />
+              <Card title={t('المحاولات', 'Attempts')} value={data.stats.attempts} />
+              <Card title={t('المشاركون', 'Participants')} value={data.stats.uniqueParticipants} />
+              <Card title={t('متوسط الدرجة', 'Avg Score')} value={`${data.stats.avgScore}%`} />
+              <Card title={t('معدل النجاح', 'Pass Rate')} value={`${data.stats.passRate}%`} />
+              <Card title={t('متوسط الوقت', 'Avg Time')} value={`${data.stats.avgTimeMinutes} ${t('د', 'm')}`} />
+              <Card title={t('اشتراكات الاختبار', 'Exam Enrollments')} value={data.stats.enrollmentCount} />
+              <Card title={t('مدفوعات ناجحة', 'Successful Payments')} value={data.stats.paidPaymentsCount} />
+              <Card title={t('إيراد', 'Revenue')} value={formatPrice(data.stats.totalRevenue)} />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-8">
-              <Panel title="اتجاه المحاولات">
+              <Panel title={t('اتجاه المحاولات', 'Attempts Trend')}>
                 <MiniLineChart data={data.trends.attempts} />
               </Panel>
-              <Panel title="اتجاه المدفوعات">
+              <Panel title={t('اتجاه المدفوعات', 'Payment Trend')}>
                 <MiniLineChart data={data.trends.payments} stroke="#14b8a6" />
               </Panel>
-              <Panel title="اتجاه الإيراد">
+              <Panel title={t('اتجاه الإيراد', 'Revenue Trend')}>
                 <MiniBarChart data={data.trends.revenue} color="bg-emerald-500" />
               </Panel>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-8">
-              <h2 className="font-semibold text-slate-900 mb-4">أفضل النتائج</h2>
+              <h2 className="font-semibold text-slate-900 mb-4">{t('أفضل النتائج', 'Top Results')}</h2>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px]">
                   <thead>
                     <tr className="text-right bg-accent-50 text-xs text-accent-500">
-                      <th className="px-4 py-3">الطالب</th>
-                      <th className="px-4 py-3">البريد</th>
-                      <th className="px-4 py-3">أفضل درجة</th>
-                      <th className="px-4 py-3">أسرع وقت</th>
-                      <th className="px-4 py-3">عدد المحاولات</th>
+                      <th className="px-4 py-3">{t('الطالب', 'Student')}</th>
+                      <th className="px-4 py-3">{t('البريد', 'Email')}</th>
+                      <th className="px-4 py-3">{t('أفضل درجة', 'Best Score')}</th>
+                      <th className="px-4 py-3">{t('أسرع وقت', 'Fastest Time')}</th>
+                      <th className="px-4 py-3">{t('عدد المحاولات', 'Attempts')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-accent-100">
@@ -123,7 +125,7 @@ export default function AdminExamStatsPage() {
                         <td className="px-4 py-3 font-medium text-accent-900">{row.name}</td>
                         <td className="px-4 py-3 text-accent-700">{row.email}</td>
                         <td className="px-4 py-3 text-accent-700">{row.bestScore}%</td>
-                        <td className="px-4 py-3 text-accent-700">{Math.round((row.fastestTime || 0) / 60)} د</td>
+                        <td className="px-4 py-3 text-accent-700">{Math.round((row.fastestTime || 0) / 60)} {t('د', 'm')}</td>
                         <td className="px-4 py-3 text-accent-700">{row.attempts}</td>
                       </tr>
                     ))}

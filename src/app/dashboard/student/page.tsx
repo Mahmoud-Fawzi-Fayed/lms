@@ -8,11 +8,16 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
 import { useLang } from '@/contexts/LanguageContext';
-import { studentLinks } from '@/lib/nav-links';
 
 export default function StudentDashboard() {
   useLang();
   const { data: session, status } = useSession();
+  const studentLinks = [
+    { href: '/dashboard/student', label: t('لوحة التحكم', 'Dashboard'), icon: '📊' },
+    { href: '/dashboard/student/courses', label: t('كورساتي', 'My Courses'), icon: '📚' },
+    { href: '/dashboard/student/exams', label: t('اختباراتي', 'My Exams'), icon: '📝' },
+    { href: '/dashboard/student/profile', label: t('الملف الشخصي', 'Profile'), icon: '👤' },
+  ];
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -48,10 +53,10 @@ export default function StudentDashboard() {
   const activeEnrollments = data?.enrollments?.filter((e: any) => e.status === 'active') || [];
 
   return (
-    <DashboardSidebar links={studentLinks()}>
+    <DashboardSidebar links={studentLinks}>
       <div className="p-8">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
-          {t('مرحباً بك', 'Welcome')}{data?.user?.name ? `, ${data.user.name}` : ''} 👋
+          {t('مرحباً بك', 'Welcome')}{data?.user?.name ? `، ${data.user.name}` : ''} 👋
         </h1>
         <p className="text-slate-500 mb-8">{t('أكمل رحلة التعلم', 'Continue your learning journey')}</p>
 
@@ -114,7 +119,7 @@ export default function StudentDashboard() {
                       <div className="flex-1">
                         <div className="font-medium text-slate-900">{enrollment.course?.title}</div>
                         <div className="text-sm text-slate-500 mt-1">
-                          {enrollment.course?.instructor?.name || t('محاضر غير معروف', 'Unknown instructor')}
+                          {enrollment.course?.instructor?.name || t('محاضر غير معروف', 'Unknown Instructor')}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">

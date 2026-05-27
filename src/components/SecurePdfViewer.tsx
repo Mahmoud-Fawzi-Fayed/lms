@@ -1,6 +1,8 @@
 'use client';
 
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
+import { useLang } from '@/contexts/LanguageContext';
+import { t } from '@/lib/i18n';
 
 interface SecurePdfViewerProps {
   src: string;
@@ -12,6 +14,7 @@ interface SecurePdfViewerProps {
  * No browser PDF plugin needed. No toolbar, no download button.
  */
 export default function SecurePdfViewer({ src, title }: SecurePdfViewerProps) {
+  useLang();
   return (
     <div
       className="relative bg-gray-900 rounded-lg overflow-hidden"
@@ -21,7 +24,7 @@ export default function SecurePdfViewer({ src, title }: SecurePdfViewerProps) {
       {/* Header */}
       <div className="bg-gray-800 px-4 py-2 flex items-center justify-between">
         <span className="text-white text-sm font-medium">{title || 'PDF Document'}</span>
-        <span className="text-gray-400 text-xs">محتوى محمي</span>
+        <span className="text-gray-400 text-xs">{t('محتوى محمي', 'Protected Content')}</span>
       </div>
 
       <PdfCanvasViewer src={src} protected maxHeight="80vh" />
