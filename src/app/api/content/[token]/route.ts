@@ -293,8 +293,10 @@ export async function GET(
       return apiError('الوصول المباشر للفيديو غير مسموح', 403);
     }
 
-    // Rate-limit raw PDF downloads per token (defeats mass scraping of a leaked token).
-    if (isRawMode && !bumpTokenHit(token)) {
+    // Rate-limit only full raw fetches per token. PDF.js may issue many Range
+    // chunk requests for a single open; counting each chunk would break normal viewing.
+    const isRangeRequest = Boolean(req.headers.get('range'));
+    if (isRawMode && !isRangeRequest && !bumpTokenHit(token)) {
       return apiError('تم تجاوز الحد المسموح من الطلبات لهذا المحتوى', 429);
     }
 
