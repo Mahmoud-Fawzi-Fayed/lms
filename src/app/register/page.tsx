@@ -179,22 +179,70 @@ function RegisterContent() {
           <h1 className="text-3xl font-bold text-accent-900 mb-2 text-center">
             {t('اختر سنتك الدراسية', 'Choose your academic year')}
           </h1>
-          <p className="text-accent-600 text-center mb-10 text-lg">
+          <p className="text-accent-600 text-center mb-6 text-lg">
             {t('ستظهر لك الكورسات المناسبة لمستواك', 'Courses matching your level will be shown')}
           </p>
 
           <div className="space-y-6">
-            <div className="overflow-x-auto pb-2">
-              <div className="inline-flex min-w-full gap-2">
-                {ACADEMIC_YEARS.map(y => (
+            {/* Primary */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
+                {t('المرحلة الابتدائية', 'Primary')}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {ACADEMIC_YEARS.filter(y => y.value.includes('primary')).map(y => (
                   <button
                     key={y.value}
                     type="button"
                     onClick={() => selectYear(y.value)}
-                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap border transition-colors ${
+                    className={`px-3 py-3.5 rounded-xl text-sm font-semibold border transition-all text-center leading-snug ${
                       selectedYear === y.value
-                        ? 'bg-primary-500 text-white border-primary-500'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        ? 'bg-primary-500 text-white border-primary-500 shadow-md scale-[1.02]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-primary-300 hover:bg-primary-50'
+                    }`}
+                  >
+                    {academicYearLabel(y.value)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Preparatory */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
+                {t('المرحلة الإعدادية', 'Preparatory')}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {ACADEMIC_YEARS.filter(y => y.value.includes('prep')).map(y => (
+                  <button
+                    key={y.value}
+                    type="button"
+                    onClick={() => selectYear(y.value)}
+                    className={`px-3 py-3.5 rounded-xl text-sm font-semibold border transition-all text-center leading-snug ${
+                      selectedYear === y.value
+                        ? 'bg-primary-500 text-white border-primary-500 shadow-md scale-[1.02]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-primary-300 hover:bg-primary-50'
+                    }`}
+                  >
+                    {academicYearLabel(y.value)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Secondary */}
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">
+                {t('المرحلة الثانوية', 'Secondary')}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                {ACADEMIC_YEARS.filter(y => y.value.includes('secondary')).map(y => (
+                  <button
+                    key={y.value}
+                    type="button"
+                    onClick={() => selectYear(y.value)}
+                    className={`px-3 py-3.5 rounded-xl text-sm font-semibold border transition-all text-center leading-snug ${
+                      selectedYear === y.value
+                        ? 'bg-primary-500 text-white border-primary-500 shadow-md scale-[1.02]'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-primary-300 hover:bg-primary-50'
                     }`}
                   >
                     {academicYearLabel(y.value)}
