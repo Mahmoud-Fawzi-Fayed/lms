@@ -436,10 +436,11 @@ export default function CourseDetailPage() {
                                   e.stopPropagation();
                                   handlePreviewLesson(lesson._id);
                                 }}
-                                className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-0.5 rounded-full transition-colors"
+                                className="inline-flex items-center gap-1 text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2.5 py-0.5 rounded-full transition-colors font-medium"
                                 title="فتح المعاينة"
                               >
-                                {lesson.isFreeLesson ? 'الدرس الأول مجاني' : 'معاينة'}
+                                {lesson.type === 'video' ? '🎥' : lesson.type === 'pdf' ? '📄' : null}
+                                {lesson.isFreeLesson ? 'مجاني' : 'معاينة'}
                               </button>
                             )}
                           </div>

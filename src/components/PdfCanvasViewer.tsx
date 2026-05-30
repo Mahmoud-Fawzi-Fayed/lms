@@ -57,13 +57,29 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         const pdfjsLib = await import('pdfjs-dist');
         pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
+        // Protected PDFs: pre-fetch bytes in the main thread so the browser
+        // sends the correct Sec-Fetch-* headers (dest=empty, mode=cors,
+        // site=same-origin) plus our custom X-Content-Request header.
+        // PDF.js fetches from its web-worker context which can produce
+        // different Sec-Fetch-Dest values that fail the content-API check.
+        let docSource: { url: string } | { data: Uint8Array };
+        if (isProtected) {
+          const resp = await fetch(src, {
+            credentials: 'include',
+            headers: { 'X-Content-Request': '1' },
+          });
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          docSource = { data: new Uint8Array(await resp.arrayBuffer()) };
+        } else {
+          docSource = { url: src };
+        }
+
         const loadingTask = pdfjsLib.getDocument({
-          url: src,
-          withCredentials: isProtected,
-          httpHeaders: isProtected ? { 'X-Content-Request': '1' } : undefined,
-          rangeChunkSize: 64 * 1024,
-          disableAutoFetch: false,
-          disableStream: false,
+          ...docSource,
+          // When we have the full bytes already, disable range/stream so
+          // PDF.js doesn't try to make additional network requests.
+          disableAutoFetch: isProtected,
+          disableStream: isProtected,
         });
         loadTaskRef.current = loadingTask;
         const pdf = await loadingTask.promise;
