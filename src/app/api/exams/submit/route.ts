@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import mongoose from 'mongoose';
-import { withAuth, apiError, apiSuccess } from '@/lib/api-helpers';
+import { withAuth, apiError, apiSuccess, isValidObjectId } from '@/lib/api-helpers';
 import { Exam, ExamAttempt } from '@/models';
 import { submitExamSchema } from '@/lib/validations';
 import { gradeAttempt } from '@/lib/exam-grading';
@@ -17,7 +17,7 @@ export const POST = withAuth(async (req, user) => {
 
   const { examId, attemptId, answers } = parsed.data;
 
-  if (!mongoose.isValidObjectId(attemptId) || !mongoose.isValidObjectId(examId)) {
+  if (!isValidObjectId(attemptId) || !isValidObjectId(examId)) {
     return apiError('معرف غير صالح', 400);
   }
 

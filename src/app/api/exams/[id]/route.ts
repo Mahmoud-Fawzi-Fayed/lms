@@ -85,6 +85,7 @@ export async function GET(
 // PUT /api/exams/[id] - Update exam
 export const PUT = withAuth(async (req, user) => {
   const id = req.nextUrl.pathname.split('/').pop()!;
+  if (!isValidObjectId(id)) return apiError('معرف الاختبار غير صالح', 400);
   let body: any;
   try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
 
@@ -183,6 +184,7 @@ export const PUT = withAuth(async (req, user) => {
 // DELETE /api/exams/[id] - Delete exam
 export const DELETE = withAuth(async (req, user) => {
   const id = req.nextUrl.pathname.split('/').pop()!;
+  if (!isValidObjectId(id)) return apiError('معرف الاختبار غير صالح', 400);
 
   const exam = await Exam.findById(id).populate('course');
   if (!exam) return apiError('الاختبار غير موجود', 404);

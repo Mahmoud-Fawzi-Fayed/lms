@@ -20,7 +20,7 @@ ENV PORT=3001
 
 RUN groupadd --system --gid 1001 nodejs \
   && useradd --system --uid 1001 --gid nodejs nextjs \
-  && mkdir -p /app/uploads/pdfs /app/uploads/videos /app/uploads/tmp /app/public/thumbnails \
+  && mkdir -p /app/uploads/pdfs /app/uploads/videos /app/uploads/tmp /app/uploads/thumbnails /app/public/thumbnails \
   && chown -R nextjs:nodejs /app
 
 COPY --from=builder /app/package.json ./package.json

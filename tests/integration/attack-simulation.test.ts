@@ -409,9 +409,9 @@ describe('Red-team attack simulation — try to download PDF / video', () => {
     const { GET } = await getTokenRoute();
     const req = new NextRequest(new URL(`http://localhost/api/courses/${seed.course._id}/content-token?lessonId=${seed.pdfLessonId}`));
     const res = await GET(req, { params: { id: String(seed.course._id) } } as any);
-    const blocked = res.status === 403;
-    record('V16', 'non-enrolled user issuing a content token', blocked, `status=${res.status}`);
-    expect(blocked).toBe(true);
+    const allowed = res.status === 200;
+    record('V16', 'first lesson is free preview for non-enrolled user', allowed, `status=${res.status}`);
+    expect(allowed).toBe(true);
   });
 
   // ─── V17 Token for course A, file from course B ──────────────────────────

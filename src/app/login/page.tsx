@@ -23,7 +23,13 @@ function LoginContent() {
   useLang();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  // Sanitize callbackUrl: only allow same-origin relative paths (starts with / but not //).
+  // Anything else (e.g. https://evil.com) is an open-redirect phishing vector.
+  const rawCallbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = /^\/(?!\/)/.test(rawCallbackUrl) ? rawCallbackUrl : '/dashboard';
+  // courseId is forwarded from the course buy button so the register link
+  // lands directly on the purchase-gated registration page.
+  const courseId = searchParams.get('courseId') || '';
 
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -131,7 +137,7 @@ function LoginContent() {
           </form>
 
           <p className="text-accent-600 text-center mt-8">
-            {t('لا تملك حساب؟', "Don't have an account?")} <Link href="/register" className="text-primary-600 font-semibold hover:text-primary-700">{t('أنشئ واحد الآن', 'Create one now')}</Link>
+            {t('لا تملك حساب؟', "Don't have an account?")} <Link href={courseId ? `/register?courseId=${courseId}&callbackUrl=${encodeURIComponent(callbackUrl)}` : '/register'} className="text-primary-600 font-semibold hover:text-primary-700">{t('أنشئ واحداً الآن', 'Create one now')}</Link>
           </p>
         </div>
       </div>

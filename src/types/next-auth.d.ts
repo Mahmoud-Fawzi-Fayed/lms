@@ -7,11 +7,15 @@ declare module 'next-auth' {
       id: string;
       role: 'admin' | 'instructor' | 'student';
       academicYear?: string;
+      academicTerm?: 'term1' | 'term2' | 'full_year';
+      subscriptionStatus?: 'none' | 'active' | 'expired' | 'cancelled';
     } & DefaultSession['user'];
   }
   interface User {
     role: 'admin' | 'instructor' | 'student';
     academicYear?: string;
+    academicTerm?: 'term1' | 'term2' | 'full_year';
+    subscriptionStatus?: 'none' | 'active' | 'expired' | 'cancelled';
   }
 }
 
@@ -20,5 +24,7 @@ declare module 'next-auth/jwt' {
     id: string;
     role: 'admin' | 'instructor' | 'student';
     academicYear?: string;
+    academicTerm?: 'term1' | 'term2' | 'full_year';
+    subscriptionStatus?: 'none' | 'active' | 'expired' | 'cancelled';
   }
 }

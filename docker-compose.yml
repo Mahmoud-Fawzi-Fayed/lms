@@ -21,6 +21,8 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
+      # Legacy: keep public/thumbnails mount so old /thumbnails/* URLs still resolve
+      # (the new API route at /api/thumbnails/* falls back to this directory).
       - ./public/thumbnails:/app/public/thumbnails
     security_opt:
       - no-new-privileges:true

@@ -198,7 +198,7 @@ export async function GET(
     // Raw collection query — bypasses Mongoose select:false on nested filePath
     const courseDoc = await Course.collection.findOne(
       { _id: new mongoose.Types.ObjectId(decoded.courseId) },
-      { projection: { instructor: 1, targetYear: 1, 'modules.lessons': 1 } }
+      { projection: { instructor: 1, targetYear: 1, isPublished: 1, modules: 1 } }
     );
     if (!courseDoc) return apiError('الكورس غير موجود', 404);
 
@@ -217,6 +217,14 @@ export async function GET(
 
     if (!lessonDoc) return apiError('الدرس غير موجود', 404);
 
+    const orderedModules = [...(courseDoc.modules || [])].sort(
+      (a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)
+    );
+    const firstLessonId = orderedModules
+      .flatMap((mod: any) => [...(mod.lessons || [])].sort((a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)))
+      .find((lesson: any) => lesson?._id)?._id?.toString();
+    const isFirstLesson = firstLessonId === decoded.lessonId;
+
     const isPreviewLesson = Boolean(lessonDoc.isPreview);
 
     // Year access check (students only)
@@ -226,7 +234,7 @@ export async function GET(
     }
 
     // Enrollment check — skip for owners/admin and free-preview lessons
-    if (!isOwnerOrAdmin && !isPreviewLesson) {
+    if (!isOwnerOrAdmin && !isPreviewLesson && !isFirstLesson) {
       const enrollment = await Enrollment.findOne({
         user: user.id,
         course: decoded.courseId,

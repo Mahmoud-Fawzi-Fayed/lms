@@ -49,6 +49,10 @@ export const authOptions: NextAuthOptions = {
         if (!user.isActive) {
           throw new Error('الحساب غير مفعل حالياً. تواصل مع الدعم الفني.');
         }
+        // Subscription status no longer gates login.
+        // Content access is controlled per-course via Enrollment records,
+        // not by a global subscription flag. Blocking login prevents students
+        // from logging in to complete a pending course purchase.
 
         const isValid = await user.comparePassword(credentials.password);
         if (!isValid) {
@@ -61,6 +65,8 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           academicYear: user.academicYear,
+          academicTerm: (user as any).academicTerm,
+          subscriptionStatus: (user as any).subscriptionStatus,
           image: user.avatar,
         };
       },
@@ -72,6 +78,8 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.role = (user as any).role;
         token.academicYear = (user as any).academicYear;
+        token.academicTerm = (user as any).academicTerm;
+        token.subscriptionStatus = (user as any).subscriptionStatus;
       }
       return token;
     },
@@ -80,6 +88,8 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
         (session.user as any).academicYear = token.academicYear;
+        (session.user as any).academicTerm = token.academicTerm;
+        (session.user as any).subscriptionStatus = token.subscriptionStatus;
       }
       return session;
     },

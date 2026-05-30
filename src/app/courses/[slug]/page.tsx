@@ -62,7 +62,9 @@ export default function CourseDetailPage() {
 
   const handleEnroll = async (method: 'card' | 'fawry' | 'wallet') => {
     if (!session) {
-      router.push(`/login?callbackUrl=/courses/${slug}`);
+      // Pass both callbackUrl (so they return to this course after login) and
+      // courseId (so new users land on the purchase-gated registration page).
+      router.push(`/login?callbackUrl=/courses/${slug}&courseId=${course._id}`);
       return;
     }
 
@@ -101,7 +103,7 @@ export default function CourseDetailPage() {
       } else {
         toast.success(t('تم بدء عملية الدفع. أكمل الدفع للتسجيل.', 'Payment started. Complete payment to enroll.'));
       }
-    } catch (error) {
+    } catch {
       toast.error(t('فشل الدفع. حاول مرة أخرى.', 'Payment failed. Please try again.'));
     } finally {
       setPaymentLoading(false);
@@ -121,7 +123,13 @@ export default function CourseDetailPage() {
     let lessonVideoControls: any = undefined;
     for (const mod of course.modules || []) {
       const l = (mod.lessons || []).find((ls: any) => ls._id === lessonId);
-      if (l) { lessonType = l.type; lessonTitle = l.title; lessonTextContent = l.content || ''; lessonVideoControls = l.videoControls; break; }
+      if (l) {
+        lessonType = l.type;
+        lessonTitle = l.title;
+        lessonTextContent = l.content || '';
+        lessonVideoControls = l.videoControls;
+        break;
+      }
     }
 
     // Text lessons don't need a content token — show directly
@@ -409,19 +417,19 @@ export default function CourseDetailPage() {
                       {mod.lessons?.map((lesson: any, li: number) => (
                         <div
                           key={li}
-                          className={`px-5 py-3 flex items-center justify-between hover:bg-slate-50 ${lesson.isPreview ? 'cursor-pointer' : ''}`}
+                          className={`px-5 py-3 flex items-center justify-between hover:bg-slate-50 ${(lesson.isPreview || lesson.isFreeLesson) ? 'cursor-pointer' : ''}`}
                           onClick={() => {
-                            if (lesson.isPreview) handlePreviewLesson(lesson._id);
+                            if (lesson.isPreview || lesson.isFreeLesson) handlePreviewLesson(lesson._id);
                           }}
                         >
                           <div className="flex items-center gap-3">
                             <span className="text-slate-400">
                               {lesson.type === 'video' ? '🎥' : lesson.type === 'pdf' ? '📄' : '📝'}
                             </span>
-                            <span className={`text-sm ${lesson.isPreview ? 'text-slate-900' : 'text-slate-600'}`}>
+                            <span className={`text-sm ${(lesson.isPreview || lesson.isFreeLesson) ? 'text-slate-900' : 'text-slate-600'}`}>
                               {lesson.title}
                             </span>
-                            {lesson.isPreview && (
+                            {(lesson.isPreview || lesson.isFreeLesson) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -431,7 +439,7 @@ export default function CourseDetailPage() {
                                 className="text-xs bg-green-100 hover:bg-green-200 text-green-700 px-2 py-0.5 rounded-full transition-colors"
                                 title="فتح المعاينة"
                               >
-                                معاينة
+                                {lesson.isFreeLesson ? 'الدرس الأول مجاني' : 'معاينة'}
                               </button>
                             )}
                           </div>

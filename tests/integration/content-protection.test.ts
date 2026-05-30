@@ -515,7 +515,7 @@ describe('Content protection — bypass surface', () => {
     expect(res.status).toBe(404);
   });
 
-  it('rejects issuance when enrollment is not active (pending)', async () => {
+  it('allows first-lesson issuance even when enrollment is pending (free preview rule)', async () => {
     const { Enrollment } = await import('@/models');
     // Switch student enrollment to pending
     await Enrollment.updateOne(
@@ -528,7 +528,7 @@ describe('Content protection — bypass surface', () => {
       new URL(`http://localhost/api/courses/${courseId}/content-token?lessonId=${seed.pdfLessonId}`),
     );
     const res = await GET(req, { params: { id: courseId } } as any);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it('rejects issuance when not authenticated', async () => {

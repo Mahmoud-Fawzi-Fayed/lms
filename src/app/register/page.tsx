@@ -1,25 +1,35 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { signIn } from 'next-auth/react';
 import { t } from '@/lib/i18n';
 import { useLang } from '@/contexts/LanguageContext';
-import { ACADEMIC_YEARS, academicYearLabel } from '@/lib/validations';
+import { ACADEMIC_YEARS, ACADEMIC_TERMS, academicYearLabel } from '@/lib/validations';
 
-export default function RegisterPage() {
+function RegisterContent() {
   useLang();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // courseId is REQUIRED — registration is only allowed in the context of buying a course.
+  const courseId = searchParams.get('courseId') || '';
+  // Sanitize callbackUrl: only relative same-origin paths.
+  const rawCallback = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = /^\/(?!\/)/.test(rawCallback) ? rawCallback : '/dashboard';
+
   const [step, setStep] = useState<'year' | 'form'>('year');
   const [selectedYear, setSelectedYear] = useState('');
+  const [selectedTerm, setSelectedTerm] = useState<'term1' | 'term2' | 'full_year' | ''>('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
     phone: '',
+    subscriptionMethod: 'card' as 'card' | 'fawry' | 'wallet',
+    agreeToSubscription: false,
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -37,6 +47,16 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!selectedYear || !selectedTerm) {
+      toast.error(t('اختر السنة الدراسية ونظام الدراسة أولاً', 'Select academic year and term first'));
+      return;
+    }
+
+    if (!formData.agreeToSubscription) {
+      toast.error(t('يجب تأكيد الاشتراك لإتمام التسجيل', 'You must confirm subscription to continue'));
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -49,7 +69,9 @@ export default function RegisterPage() {
           password: formData.password,
           phone: formData.phone,
           academicYear: selectedYear,
-        }),
+          academicTerm: selectedTerm,
+          subscriptionMethod: formData.subscriptionMethod,
+          agreeToSubscription: formData.agreeToSubscription,            courseId: courseId || undefined,        }),
       });
 
       const data = await res.json();
@@ -68,47 +90,76 @@ export default function RegisterPage() {
       });
 
       if (signInResult?.ok) {
-        router.push('/dashboard');
-        router.refresh();
+        // After sign-in, initiate payment for the selected course.
+        if (courseId && formData.subscriptionMethod) {
+          try {
+            const payRes = await fetch('/api/payments/initiate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ courseId, method: formData.subscriptionMethod }),
+            });
+            const payData = await payRes.json();
+
+            if (payData.data?.enrolled) {
+              // Free course — already enrolled
+              toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'));
+              router.push(callbackUrl);
+              router.refresh();
+              return;
+            }
+
+            if (payData.data?.iframeUrl) {
+              // Redirect to Paymob payment iframe
+              window.location.href = payData.data.iframeUrl;
+              return;
+            }
+
+            if (payData.data?.paymentUrl) {
+              window.location.href = payData.data.paymentUrl;
+              return;
+            }
+
+            if (payData.data?.fawryRef) {
+              toast.success(`${t('مرجع فوري:', 'Fawry ref:')} ${payData.data.fawryRef}`);
+              router.push(callbackUrl);
+              router.refresh();
+              return;
+            }
+
+            // Payment initiation failed — go to course page to retry
+            toast.error(payData.error || t('تعذر بدء عملية الدفع. حاول مرة أخرى من صفحة الكورس.', 'Payment failed to start. Try again from the course page.'));
+            router.push(callbackUrl);
+            router.refresh();
+          } catch {
+            toast.error(t('حدث خطأ أثناء بدء الدفع. توجه إلى صفحة الكورس.', 'Payment error. Go to the course page to retry.'));
+            router.push(callbackUrl);
+            router.refresh();
+          }
+        } else {
+          router.push(callbackUrl);
+          router.refresh();
+        }
       } else {
         router.push('/login');
       }
-    } catch (error) {
+    } catch {
       toast.error(t('حدث خطأ. حاول مرة أخرى.', 'An error occurred. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
-  const yearGroups = [
-    {
-      group: t('الابتدائي', 'Primary'),
-      color: 'from-emerald-500 to-teal-500',
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      ring: 'ring-emerald-400',
-      text: 'text-emerald-700',
-      years: ACADEMIC_YEARS.filter(y => y.value.includes('primary')),
-    },
-    {
-      group: t('الإعدادي', 'Preparatory'),
-      color: 'from-blue-500 to-indigo-500',
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      ring: 'ring-blue-400',
-      text: 'text-blue-700',
-      years: ACADEMIC_YEARS.filter(y => y.value.includes('prep')),
-    },
-    {
-      group: t('الثانوي', 'Secondary'),
-      color: 'from-violet-500 to-purple-500',
-      bg: 'bg-violet-50',
-      border: 'border-violet-200',
-      ring: 'ring-violet-400',
-      text: 'text-violet-700',
-      years: ACADEMIC_YEARS.filter(y => y.value.includes('secondary')),
-    },
-  ];
+  const selectedYearMeta = ACADEMIC_YEARS.find(y => y.value === selectedYear);
+  const selectedIsGrade2Secondary = selectedYear === 'grade2_secondary';
+
+  const selectYear = (year: string) => {
+    setSelectedYear(year);
+    if (year === 'grade2_secondary') {
+      setSelectedTerm('full_year');
+    } else if (selectedTerm === 'full_year') {
+      setSelectedTerm('');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-accent-50 to-primary-50 flex flex-col items-center justify-center p-4">
@@ -124,7 +175,7 @@ export default function RegisterPage() {
       </Link>
 
       {step === 'year' && (
-        <div className="w-full max-w-2xl bg-white rounded-xl shadow-soft border border-accent-200 p-8">
+        <div className="w-full max-w-3xl bg-white rounded-xl shadow-soft border border-accent-200 p-8">
           <h1 className="text-3xl font-bold text-accent-900 mb-2 text-center">
             {t('اختر سنتك الدراسية', 'Choose your academic year')}
           </h1>
@@ -133,42 +184,60 @@ export default function RegisterPage() {
           </p>
 
           <div className="space-y-6">
-            {yearGroups.map(({ group, color, bg, border, ring, text, years }) => (
-              <div key={group}>
-                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold mb-3 ${bg} ${text}`}>
-                  <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${color}`} />
-                  {group}
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {years.map(y => (
-                    <button
-                      key={y.value}
-                      type="button"
-                      onClick={() => setSelectedYear(y.value)}
-                      className={`relative flex flex-col items-center justify-center py-4 px-3 rounded-2xl border-2 transition-all font-semibold text-sm
-                        ${selectedYear === y.value
-                          ? `${bg} ${border} ring-2 ${ring} ring-offset-1 ${text} shadow-md`
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                    >
-                      {selectedYear === y.value && (
-                        <span className={`absolute top-2 left-2 w-5 h-5 rounded-full bg-gradient-to-br ${color} flex items-center justify-center`}>
-                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        </span>
-                      )}
-                      {academicYearLabel(y.value)}
-                    </button>
-                  ))}
-                </div>
+            <div className="overflow-x-auto pb-2">
+              <div className="inline-flex min-w-full gap-2">
+                {ACADEMIC_YEARS.map(y => (
+                  <button
+                    key={y.value}
+                    type="button"
+                    onClick={() => selectYear(y.value)}
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap border transition-colors ${
+                      selectedYear === y.value
+                        ? 'bg-primary-500 text-white border-primary-500'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {academicYearLabel(y.value)}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
+
+            {selectedYear && (
+              <div className="border border-accent-200 rounded-2xl p-5 bg-accent-50/40">
+                <h3 className="font-bold text-accent-900 mb-3">
+                  {t('اختر نظام الدراسة', 'Choose study term')} · {selectedYearMeta ? academicYearLabel(selectedYearMeta.value) : ''}
+                </h3>
+
+                {selectedIsGrade2Secondary ? (
+                  <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-primary-800 text-sm font-semibold">
+                    {t('الصف الثاني الثانوي نظام سنوي (مباشر بدون ترمين)', 'Grade 2 Secondary is full-year (direct, no terms)')}
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {ACADEMIC_TERMS.filter(term => term.value !== 'full_year').map(term => (
+                      <button
+                        key={term.value}
+                        type="button"
+                        onClick={() => setSelectedTerm(term.value)}
+                        className={`rounded-xl border px-4 py-4 text-sm font-semibold transition-colors ${
+                          selectedTerm === term.value
+                            ? 'border-primary-500 bg-primary-50 text-primary-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {t(term.label, term.labelEn)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <button
             type="button"
-            disabled={!selectedYear}
+            disabled={!selectedYear || !selectedTerm}
             onClick={() => setStep('form')}
             className="w-full mt-10 py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-soft"
           >
@@ -197,6 +266,10 @@ export default function RegisterPage() {
             {t('تغيير السنة الدراسية', 'Change academic year')}
             <span className="ms-1 px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full text-xs font-bold">
               {academicYearLabel(selectedYear)}
+              {selectedTerm ? ` • ${t(
+                selectedTerm === 'term1' ? 'الفصل الأول' : selectedTerm === 'term2' ? 'الفصل الثاني' : 'سنوي',
+                selectedTerm === 'term1' ? 'Term 1' : selectedTerm === 'term2' ? 'Term 2' : 'Full year'
+              )}` : ''}
             </span>
           </button>
 
@@ -204,9 +277,8 @@ export default function RegisterPage() {
             {t('إنشاء حساب', 'Create an account')}
           </h1>
           <p className="text-accent-600 mb-8">
-            {t('ابدأ رحلتك التعليمية مع منصة أ/ محمد الصباغ', "Start your learning journey with Mr. Mohamed Elsabbagh's platform")}
+            {t('سجّل بياناتك لإتمام عملية الشراء', 'Fill in your details to complete your purchase')}
           </p>
-
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-semibold text-accent-800 mb-2">{t('الاسم الكامل', 'Full name')}</label>
@@ -277,9 +349,37 @@ export default function RegisterPage() {
               />
             </div>
 
+            <div className="border border-primary-200 rounded-xl p-4 bg-primary-50/50 space-y-3">
+              <h3 className="text-sm font-bold text-accent-900">
+                {t('الاشتراك أثناء التسجيل', 'Subscription during registration')}
+              </h3>
+
+              <select
+                value={formData.subscriptionMethod}
+                onChange={e => setFormData({ ...formData, subscriptionMethod: e.target.value as 'card' | 'fawry' | 'wallet' })}
+                className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-all bg-white"
+              >
+                <option value="card">{t('بطاقة بنكية', 'Bank card')}</option>
+                <option value="fawry">{t('فوري', 'Fawry')}</option>
+                <option value="wallet">{t('محفظة إلكترونية', 'Wallet')}</option>
+              </select>
+
+              <label className="flex items-start gap-2 text-sm text-accent-700">
+                <input
+                  type="checkbox"
+                  checked={formData.agreeToSubscription}
+                  onChange={e => setFormData({ ...formData, agreeToSubscription: e.target.checked })}
+                  className="mt-1"
+                />
+                <span>
+                  {t('أوافق على إتمام الاشتراك مع التسجيل. التسجيل بدون اشتراك غير متاح.', 'I agree to complete subscription with registration. Registration without subscription is not available.')}
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !formData.agreeToSubscription}
               className="w-full py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-4 shadow-soft"
             >
               {loading ? (
@@ -296,12 +396,20 @@ export default function RegisterPage() {
 
           <p className="text-center text-accent-600 mt-8 text-sm">
             {t('لديك حساب بالفعل؟', 'Already have an account?')}{' '}
-            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">
+            <Link href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="text-primary-600 font-semibold hover:text-primary-700">
               {t('سجّل دخولك', 'Sign in')}
             </Link>
           </p>
         </div>
       )}
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" /></div>}>
+      <RegisterContent />
+    </Suspense>
   );
 }

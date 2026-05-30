@@ -37,7 +37,7 @@ export async function GET(
     const kind: TokenKind = kindParam === 'stream' ? 'stream' : 'raw';
 
     const course = await Course.findById(params.id)
-      .select('targetYear instructor modules.lessons._id modules.lessons.isPreview modules.lessons.type +modules.lessons.filePath')
+      .select('targetYear instructor modules.order modules.lessons._id modules.lessons.order modules.lessons.isPreview modules.lessons.type +modules.lessons.filePath')
       .lean();
     if (!course) return apiError('الكورس غير موجود', 404);
 
@@ -49,6 +49,20 @@ export async function GET(
     let isPreviewLesson = false;
     let lessonType: string | undefined;
     let lessonHasFile = false;
+    let firstLessonId: string | null = null;
+    const orderedModules = [...((course as any).modules || [])].sort(
+      (a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)
+    );
+    for (const mod of orderedModules) {
+      const orderedLessons = [...(mod.lessons || [])].sort(
+        (a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)
+      );
+      if (orderedLessons[0]?._id) {
+        firstLessonId = orderedLessons[0]._id.toString();
+        break;
+      }
+    }
+
     for (const mod of (course as any).modules || []) {
       const lesson = (mod.lessons || []).find((l: any) => l._id?.toString() === lessonId);
       if (lesson) {
@@ -61,6 +75,7 @@ export async function GET(
     }
 
     if (!lessonExists) return apiError('الدرس غير موجود', 404);
+  const isFirstLesson = Boolean(firstLessonId && lessonId === firstLessonId);
 
     // Refuse to issue a raw token for a video lesson and vice-versa — narrows
     // the cross-mode attack surface at the source.
@@ -85,7 +100,7 @@ export async function GET(
       return apiSuccess({ token });
     }
 
-    if (isPreviewLesson) {
+    if (isPreviewLesson || isFirstLesson) {
       const token = generateContentToken(user.id, params.id, lessonId, fp, kind);
       return apiSuccess({ token });
     }

@@ -1,8 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
+    // Restrict to known trusted origins only — a wildcard '**' would allow the
+    // Next.js image optimizer to be used as an open SSRF proxy for any HTTPS host.
     remotePatterns: [
-      { protocol: 'https', hostname: '**' },
+      { protocol: 'https', hostname: 'lh3.googleusercontent.com' }, // Google avatars
+      { protocol: 'https', hostname: '*.googleusercontent.com' },
+      { protocol: 'https', hostname: 'avatars.githubusercontent.com' }, // GitHub avatars
+      { protocol: 'https', hostname: 'cdn.discordapp.com' },            // Discord avatars
+      { protocol: 'https', hostname: 'res.cloudinary.com' },            // Cloudinary uploads (if used)
+      { protocol: 'https', hostname: 'accept.paymob.com' },             // Paymob branding
     ],
   },
   // Allow large file uploads (up to 1.5GB for videos)

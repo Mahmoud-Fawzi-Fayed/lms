@@ -78,12 +78,16 @@ export const POST = withAuth(async (req, user) => {
     };
     const ext = extByMime[file.type] || '.jpg';
     const secureFilename = `thumb_${courseId}_${crypto.randomUUID()}${ext}`;
-    const uploadDir = path.join(process.cwd(), 'public', 'thumbnails');
+    // Store in uploads/thumbnails/ — this directory is inside the ./uploads volume mount
+    // which is always writable in production Docker (read_only: true container).
+    // public/thumbnails/ was previously used but could fail on permission-restricted hosts.
+    const uploadDir = path.join(process.cwd(), 'uploads', 'thumbnails');
     await fs.mkdir(uploadDir, { recursive: true });
     const filePath = path.join(uploadDir, secureFilename);
     const arrayBuf = await file.arrayBuffer();
     await fs.writeFile(filePath, Buffer.from(arrayBuf));
-    const publicUrl = `/thumbnails/${secureFilename}`;
+    // Served via /api/thumbnails/[filename] which falls back to public/thumbnails/ for legacy URLs.
+    const publicUrl = `/api/thumbnails/${secureFilename}`;
     await Course.findByIdAndUpdate(courseId, { $set: { thumbnail: publicUrl } });
     return apiSuccess({ thumbnail: publicUrl, message: 'تم رفع الصورة بنجاح' });
   }

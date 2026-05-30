@@ -51,6 +51,13 @@ export async function GET(
     let isEnrolled = false;
     let enrollment = null;
 
+    const orderedModules = [...(course.modules || [])].sort(
+      (a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)
+    );
+    const firstLessonId = orderedModules
+      .flatMap((mod: any) => [...(mod.lessons || [])].sort((a: any, b: any) => Number(a?.order ?? 0) - Number(b?.order ?? 0)))
+      .find((lesson: any) => lesson?._id)?._id?.toString();
+
     if (user) {
       enrollment = await Enrollment.findOne({
         user: user.id,
@@ -72,17 +79,18 @@ export async function GET(
       modules: (course.modules || []).map((mod: any) => ({
         ...mod,
         lessons: (mod.lessons || []).map((lesson: any) => ({
+          ...(lesson._id?.toString() === firstLessonId ? { isFreeLesson: true } : {}),
           _id: lesson._id,
           title: lesson.title,
           type: lesson.type,
           duration: lesson.duration,
           order: lesson.order,
-          isPreview: lesson.isPreview,
+          isPreview: Boolean(lesson.isPreview || lesson._id?.toString() === firstLessonId),
           videoControls: lesson.videoControls,
           // Show upload status to course owner/admin
           ...(isOwnerOrAdmin && lesson.fileUrl ? { fileUrl: lesson.fileUrl } : {}),
           // Only show content for preview lessons or enrolled users
-          ...(isEnrolled || lesson.isPreview
+          ...(isEnrolled || lesson.isPreview || lesson._id?.toString() === firstLessonId
             ? { content: lesson.type === 'text' ? lesson.content : undefined }
             : {}),
         })),
@@ -98,6 +106,7 @@ export async function GET(
 // PUT /api/courses/[id] - Update course
 export const PUT = withAuth(async (req, user) => {
   const { id } = { id: req.nextUrl.pathname.split('/').pop()! };
+  if (!id || !/^[a-f0-9]{24}$/i.test(id)) return apiError('معرف الكورس غير صالح', 400);
   let body: any;
   try { body = await req.json(); } catch { return apiError('بيانات غير صالحة', 400); }
 
@@ -206,6 +215,7 @@ export const PUT = withAuth(async (req, user) => {
 // DELETE /api/courses/[id] - Delete course
 export const DELETE = withAuth(async (req, user) => {
   const id = req.nextUrl.pathname.split('/').pop()!;
+  if (!id || !/^[a-f0-9]{24}$/i.test(id)) return apiError('معرف الكورس غير صالح', 400);
 
   const course = await Course.findById(id);
   if (!course) return apiError('الكورس غير موجود', 404);

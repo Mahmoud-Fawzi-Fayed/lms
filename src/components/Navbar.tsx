@@ -140,7 +140,7 @@ export default function Navbar() {
                   {t('دخول', 'Sign In')}
                 </Link>
                 <Link
-                  href="/register"
+                  href="/courses"
                   className="px-5 py-2 bg-primary-500 text-white text-sm font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-soft"
                 >
                   {t('اشترك الآن', 'Sign Up Now')}
@@ -205,7 +205,7 @@ export default function Navbar() {
             ) : (
               <div className="flex flex-col gap-2 mt-4">
                 <Link href="/login" className="rounded-lg px-3 py-2 text-sm font-medium text-accent-700 bg-accent-50">{t('دخول', 'Sign In')}</Link>
-                <Link href="/register" className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-primary-600">{t('اشترك', 'Sign Up')}</Link>
+                <Link href="/courses" className="rounded-lg px-3 py-2 text-sm font-semibold text-white bg-primary-600">{t('اشترك', 'Sign Up')}</Link>
               </div>
             )}
             <button

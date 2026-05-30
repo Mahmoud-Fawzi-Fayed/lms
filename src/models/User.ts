@@ -9,7 +9,11 @@ export interface IUser extends Document {
   phone?: string;
   role: 'admin' | 'instructor' | 'student';
   academicYear?: string;
+  academicTerm?: 'term1' | 'term2' | 'full_year';
   avatar?: string;
+  subscriptionStatus?: 'none' | 'active' | 'expired' | 'cancelled';
+  subscriptionMethod?: 'card' | 'fawry' | 'wallet';
+  subscriptionStartedAt?: Date;
   isActive: boolean;
   isEmailVerified: boolean;
   resetPasswordToken?: string;
@@ -40,7 +44,16 @@ const userSchema = new Schema<IUser>(
       default: 'student',
     },
     academicYear: { type: String, trim: true },
+    academicTerm: { type: String, enum: ['term1', 'term2', 'full_year'] },
     avatar: { type: String },
+    subscriptionStatus: {
+      type: String,
+      enum: ['none', 'active', 'expired', 'cancelled'],
+      default: 'none',
+      index: true,
+    },
+    subscriptionMethod: { type: String, enum: ['card', 'fawry', 'wallet'] },
+    subscriptionStartedAt: { type: Date },
     isActive: { type: Boolean, default: true },
     isEmailVerified: { type: Boolean, default: false },
     resetPasswordToken: { type: String, select: false },

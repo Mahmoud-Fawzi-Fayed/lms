@@ -20,8 +20,19 @@ export function academicYearLabel(value: string): string {
 }
 
 export type AcademicYear = typeof ACADEMIC_YEARS[number]['value'];
+export const ACADEMIC_TERMS = [
+  { value: 'term1', label: 'الفصل الدراسي الأول', labelEn: 'Term 1' },
+  { value: 'term2', label: 'الفصل الدراسي الثاني', labelEn: 'Term 2' },
+  { value: 'full_year', label: 'سنوي', labelEn: 'Full year' },
+] as const;
+export type AcademicTerm = typeof ACADEMIC_TERMS[number]['value'];
 
 const academicYearValues = ACADEMIC_YEARS.map(y => y.value) as [string, ...string[]];
+const academicTermValues = ACADEMIC_TERMS.map(t => t.value) as [string, ...string[]];
+
+// Shared ObjectId regex — used in multiple schemas below.
+const objectIdRegex = /^[a-f0-9]{24}$/i;
+export const objectIdSchema = z.string().regex(objectIdRegex, 'المعرف غير صالح');
 
 // Auth Schemas
 export const loginSchema = z.object({
@@ -39,7 +50,32 @@ export const registerSchema = z.object({
     .regex(/[a-z]/, 'كلمة المرور يجب أن تحتوي على حرف صغير')
     .regex(/[0-9]/, 'كلمة المرور يجب أن تحتوي على رقم'),
   phone: z.string().optional(),
-  academicYear: z.enum(academicYearValues as [AcademicYear, ...AcademicYear[]]).optional(),
+  academicYear: z.enum(academicYearValues as [AcademicYear, ...AcademicYear[]]),
+  academicTerm: z.enum(academicTermValues as [AcademicTerm, ...AcademicTerm[]]),
+  // courseId is required for self-registration (must be buying something).
+  // Optional here so the schema can be reused by admin flows; the register
+  // API endpoint enforces its presence for student self-registration.
+  courseId: z.string().regex(objectIdRegex, 'معرف الكورس غير صالح').optional(),
+  subscriptionMethod: z.enum(['card', 'fawry', 'wallet']),
+  agreeToSubscription: z.literal(true, {
+    errorMap: () => ({ message: 'يجب تأكيد الاشتراك لإتمام التسجيل' }),
+  }),
+}).superRefine((val, ctx) => {
+  const isGrade2Secondary = val.academicYear === 'grade2_secondary';
+  if (isGrade2Secondary && val.academicTerm !== 'full_year') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['academicTerm'],
+      message: 'الصف الثاني الثانوي نظام سنوي (بدون ترمين)',
+    });
+  }
+  if (!isGrade2Secondary && val.academicTerm === 'full_year') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['academicTerm'],
+      message: 'اختر الفصل الدراسي الأول أو الثاني',
+    });
+  }
 });
 
 // Course Schemas
@@ -149,12 +185,12 @@ export const submitExamSchema = z.object({
 
 // Payment Schema
 export const initiatePaymentSchema = z.object({
-  courseId: z.string().min(1),
+  courseId: objectIdSchema.describe('معرف الكورس'),
   method: z.enum(['card', 'fawry', 'wallet']),
 });
 
 export const initiateExamPaymentSchema = z.object({
-  examId: z.string().min(1),
+  examId: objectIdSchema.describe('معرف الاختبار'),
   method: z.enum(['card', 'fawry', 'wallet']),
 });
 
