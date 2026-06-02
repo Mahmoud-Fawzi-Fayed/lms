@@ -95,7 +95,8 @@ async function generatePaymentKey(
   orderId: number,
   amountCents: number,
   integrationId: string,
-  billingData: any
+  billingData: any,
+  redirectUrl?: string
 ): Promise<string> {
   const response = await axios.post(`${PAYMOB_BASE}/acceptance/payment_keys`, {
     auth_token: token,
@@ -105,6 +106,7 @@ async function generatePaymentKey(
     billing_data: billingData,
     currency: 'EGP',
     integration_id: parseInt(integrationId),
+    ...(redirectUrl ? { redirect_url: redirectUrl } : {}),
   });
   return response.data.token;
 }
@@ -114,6 +116,7 @@ export async function initiatePayment(params: {
   amountEGP: number;
   method: 'card' | 'fawry' | 'wallet';
   orderId: string;
+  redirectUrl?: string;
   user: {
     email: string;
     name: string;
@@ -161,7 +164,8 @@ export async function initiatePayment(params: {
     paymobOrderId,
     amountCents,
     integrationId,
-    billingData
+    billingData,
+    params.redirectUrl
   );
 
   const result: any = {
@@ -236,6 +240,57 @@ export function verifyWebhookHmac(
     // Missing/invalid HMAC secret should fail closed.
     // so the webhook returns 401 rather than an unhandled 500.
     console.error('verifyWebhookHmac error (config missing?):', err);
+    return false;
+  }
+}
+
+// Verify redirect-callback HMAC (query-string form from Paymob redirect_url)
+// Same fields/order as webhook HMAC but 'order' key holds the order id directly.
+export function verifyCallbackHmac(params: URLSearchParams): boolean {
+  try {
+    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+    if (!hmacSecret) return false;
+
+    const receivedHmac = params.get('hmac');
+    if (!receivedHmac) return false;
+
+    const fields = [
+      'amount_cents',
+      'created_at',
+      'currency',
+      'error_occured',
+      'has_parent_transaction',
+      'id',
+      'integration_id',
+      'is_3d_secure',
+      'is_auth',
+      'is_capture',
+      'is_refunded',
+      'is_standalone_payment',
+      'is_voided',
+      'order',        // redirect sends order id directly (not order.id)
+      'owner',
+      'pending',
+      'source_data.pan',
+      'source_data.sub_type',
+      'source_data.type',
+      'success',
+    ];
+
+    const concatenated = fields.map(f => String(params.get(f) ?? '')).join('');
+
+    const calculatedHmac = crypto
+      .createHmac('sha512', hmacSecret)
+      .update(concatenated)
+      .digest('hex');
+
+    if (receivedHmac.length !== calculatedHmac.length) return false;
+
+    return crypto.timingSafeEqual(
+      Buffer.from(calculatedHmac),
+      Buffer.from(receivedHmac)
+    );
+  } catch {
     return false;
   }
 }

@@ -121,10 +121,12 @@ export const POST = withAuth(async (req, user) => {
   });
 
   // Initiate Paymob payment
+  const baseUrl = process.env.NEXTAUTH_URL?.replace(/\/$/, '') || '';
   const paymobResult = await initiatePayment({
     amountEGP: finalPrice,
     method,
     orderId: payment._id.toString(),
+    redirectUrl: `${baseUrl}/api/payments/callback`,
     user: {
       email: user.email,
       name: user.name,

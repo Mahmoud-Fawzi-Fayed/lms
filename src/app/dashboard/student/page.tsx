@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardSidebar from '@/components/DashboardSidebar';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -14,6 +14,28 @@ const METHOD_LABELS: Record<string, string> = {
   fawry:  'فوري',
   wallet: 'محفظة إلكترونية',
 };
+
+// Separate component so useSearchParams() is isolated inside a Suspense boundary
+function PaymentResultToast() {
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const paymentResult = searchParams.get('payment');
+    if (!paymentResult) return;
+    const clean = new URLSearchParams(searchParams.toString());
+    clean.delete('payment');
+    const newUrl = clean.toString() ? `?${clean.toString()}` : window.location.pathname;
+    window.history.replaceState(null, '', newUrl);
+    if (paymentResult === 'success') {
+      toast.success(t('تمت عملية الدفع بنجاح! سيتم تفعيل الاشتراك قريباً.', 'Payment successful! Your enrollment will be activated shortly.'));
+    } else if (paymentResult === 'pending') {
+      toast(t('جاري معالجة الدفع… ستصلك تأكيد قريباً.', 'Payment is being processed… you will be notified shortly.'), { icon: '⏳' });
+    } else if (paymentResult === 'failed') {
+      toast.error(t('فشلت عملية الدفع. يرجى المحاولة مرة أخرى.', 'Payment failed. Please try again.'));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
 
 export default function StudentDashboard() {
   useLang();
@@ -105,6 +127,7 @@ export default function StudentDashboard() {
 
   return (
     <DashboardSidebar links={studentLinks}>
+      <Suspense fallback={null}><PaymentResultToast /></Suspense>
       <div className="p-8">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
           {t('مرحباً بك', 'Welcome')}{data?.user?.name ? `، ${data.user.name}` : ''} 👋

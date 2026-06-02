@@ -96,6 +96,27 @@ export default function CourseDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEnrolled, sessionStatus]);
 
+  // Show a toast when Paymob redirects back here with a ?payment= result param
+  useEffect(() => {
+    const paymentResult = searchParams.get('payment');
+    if (!paymentResult) return;
+    // Strip the param from the URL so a refresh doesn't re-show the toast
+    const clean = new URLSearchParams(searchParams.toString());
+    clean.delete('payment');
+    const newUrl = clean.toString() ? `?${clean.toString()}` : window.location.pathname;
+    window.history.replaceState(null, '', newUrl);
+
+    if (paymentResult === 'success') {
+      toast.success(t('تمت عملية الدفع بنجاح! سيتم تفعيل الاشتراك قريباً.', 'Payment successful! Your enrollment will be activated shortly.'));
+      fetchCourse(); // Refresh enrollment status
+    } else if (paymentResult === 'pending') {
+      toast(t('جاري معالجة الدفع… ستصلك تأكيد قريباً.', 'Payment is being processed… you will be notified shortly.'), { icon: '⏳' });
+    } else if (paymentResult === 'failed') {
+      toast.error(t('فشلت عملية الدفع. يرجى المحاولة مرة أخرى.', 'Payment failed. Please try again.'));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const fetchCourse = async () => {
     try {
       const res = await fetch(`/api/courses/${slug}`);
