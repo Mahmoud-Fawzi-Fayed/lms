@@ -9,6 +9,12 @@ import toast from 'react-hot-toast';
 import { t } from '@/lib/i18n';
 import { useLang } from '@/contexts/LanguageContext';
 
+const METHOD_LABELS: Record<string, string> = {
+  card:   'بطاقة بنكية',
+  fawry:  'فوري',
+  wallet: 'محفظة إلكترونية',
+};
+
 export default function StudentDashboard() {
   useLang();
   const { data: session, status } = useSession();
@@ -21,6 +27,8 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login');
@@ -33,20 +41,63 @@ export default function StudentDashboard() {
 
   const fetchData = async () => {
     try {
-      const [enrollRes, userRes] = await Promise.all([
+      const [enrollRes, userRes, pendingRes] = await Promise.all([
         fetch('/api/enrollments'),
         fetch('/api/users/me'),
+        fetch('/api/payments/pending'),
       ]);
       const enrollData = await enrollRes.json();
       const userData = await userRes.json();
+      const pendingData = await pendingRes.json();
       setData({
         enrollments: enrollData.success ? (enrollData.data.enrollments || []) : [],
         user: userData.success ? userData.data : null,
       });
+      if (pendingData.success) {
+        setPendingPayments(pendingData.data.payments || []);
+      }
     } catch {
       toast.error(t('فشل تحميل البيانات', 'Failed to load data'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resumePayment = async (payment: any) => {
+    setPayingId(payment._id);
+    try {
+      const res = await fetch('/api/payments/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: payment.course?._id, method: payment.method }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || t('فشل استئناف الدفع', 'Failed to resume payment'));
+        return;
+      }
+      if (data.data?.enrolled) {
+        toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'));
+        setPendingPayments(prev => prev.filter(p => p._id !== payment._id));
+        fetchData();
+        return;
+      }
+      const url = data.data?.iframeUrl || data.data?.paymentUrl;
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      if (data.data?.fawryRef) {
+        toast.success(`${t('مرجع فوري:', 'Fawry ref:')} ${data.data.fawryRef}`);
+        setPendingPayments(prev => prev.filter(p => p._id !== payment._id));
+        fetchData();
+        return;
+      }
+      toast.error(t('تعذر استئناف الدفع. حاول من صفحة الكورس.', 'Could not resume payment. Try from the course page.'));
+    } catch {
+      toast.error(t('حدث خطأ', 'An error occurred'));
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -59,6 +110,47 @@ export default function StudentDashboard() {
           {t('مرحباً بك', 'Welcome')}{data?.user?.name ? `، ${data.user.name}` : ''} 👋
         </h1>
         <p className="text-slate-500 mb-8">{t('أكمل رحلة التعلم', 'Continue your learning journey')}</p>
+
+        {/* Pending payment alerts */}
+        {pendingPayments.length > 0 && (
+          <div className="mb-8 space-y-3">
+            {pendingPayments.map(payment => (
+              <div
+                key={payment._id}
+                className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-amber-50 border border-amber-300 rounded-2xl p-5"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-semibold text-amber-900">
+                      {t('لم يكتمل الدفع لكورس:', 'Payment incomplete for:')} {payment.course?.title || t('كورس', 'Course')}
+                    </p>
+                    <p className="text-sm text-amber-700 mt-0.5">
+                      {t('طريقة الدفع:', 'Method:')} {METHOD_LABELS[payment.method] || payment.method}
+                      {' · '}
+                      {t('المبلغ:', 'Amount:')} {payment.amount} {t('ج.م', 'EGP')}
+                    </p>
+                    <p className="text-xs text-amber-600 mt-1">
+                      {t(
+                        'لن تتمكن من الوصول لمحتوى الكورس حتى إتمام الدفع.',
+                        'You cannot access course content until payment is completed.',
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => resumePayment(payment)}
+                  disabled={payingId === payment._id}
+                  className="shrink-0 px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white font-semibold rounded-xl transition-colors text-sm"
+                >
+                  {payingId === payment._id
+                    ? t('جاري التحميل...', 'Loading...')
+                    : t('إتمام الدفع', 'Complete Payment')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
