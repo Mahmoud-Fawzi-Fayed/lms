@@ -166,6 +166,15 @@ function RegisterContent() {
           });
           const payData = await payRes.json();
 
+          if (!payRes.ok) {
+            // Payment failed — delete the newly-created account so the user
+            // doesn't end up with an orphaned account they can't use.
+            await fetch('/api/users/me', { method: 'DELETE' }).catch(() => {});
+            toast.error(payData.error || t('تعذر بدء عملية الدفع', 'Payment failed to start'));
+            setLoading(false);
+            return;
+          }
+
           if (payData.data?.enrolled) {
             toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'));
             router.push(coursePageUrl);

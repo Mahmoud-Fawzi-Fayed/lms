@@ -33,6 +33,26 @@ function getConfig(): PaymobConfig {
   return config;
 }
 
+/**
+ * Returns the missing-config error message, or null if everything is set.
+ * Use this for pre-flight checks (e.g. before creating a user account) so you
+ * can return a clean error without throwing.
+ */
+export function validatePaymobConfig(): string | null {
+  const config = {
+    apiKey: process.env.PAYMOB_API_KEY,
+    integrationIdCard: process.env.PAYMOB_INTEGRATION_ID_CARD,
+    integrationIdWallet: process.env.PAYMOB_INTEGRATION_ID_WALLET,
+    integrationIdFawry: process.env.PAYMOB_INTEGRATION_ID_FAWRY,
+    iframeId: process.env.PAYMOB_IFRAME_ID,
+    hmacSecret: process.env.PAYMOB_HMAC_SECRET,
+  };
+  const missing = Object.entries(config)
+    .filter(([, v]) => !v || v.includes('your_'))
+    .map(([k]) => k);
+  return missing.length > 0 ? `إعدادات Paymob غير مكتملة: ${missing.join(', ')}` : null;
+}
+
 function getIntegrationIdByMethod(config: PaymobConfig, method: 'card' | 'fawry' | 'wallet') {
   switch (method) {
     case 'card':

@@ -4,6 +4,7 @@ import User from '@/models/User';
 import { Course } from '@/models';
 import { registerSchema } from '@/lib/validations';
 import { rateLimit, apiError, apiSuccess } from '@/lib/api-helpers';
+import { validatePaymobConfig } from '@/lib/paymob';
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,6 +34,15 @@ export async function POST(req: NextRequest) {
 
       if (courses.length !== courseIds.length) {
         return apiError('أحد الكورسات المحددة غير موجود أو غير منشور', 404);
+      }
+    }
+
+    // If the student selected courses, verify Paymob is properly configured
+    // BEFORE creating the account — so we never end up with an orphaned account.
+    if (courseIds.length > 0) {
+      const paymobError = validatePaymobConfig();
+      if (paymobError) {
+        return apiError(`خدمة الدفع غير متاحة حالياً. تواصل مع الدعم. (${paymobError})`, 503);
       }
     }
 

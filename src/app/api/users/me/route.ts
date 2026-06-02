@@ -82,3 +82,29 @@ export const PUT = withAuth(async (req, user) => {
   await User.findByIdAndUpdate(user.id, update, { runValidators: true });
   return apiSuccess({ message: 'تم تحديث الملف الشخصي' });
 });
+
+// DELETE /api/users/me — Registration rollback only.
+// Only allowed within 5 minutes of account creation AND only if the account
+// has no enrollments or payments (i.e. nothing has happened yet).
+export const DELETE = withAuth(async (_req, user) => {
+  const fullUser = await User.findById(user.id).lean();
+  if (!fullUser) return apiError('المستخدم غير موجود', 404);
+
+  const ageMs = Date.now() - new Date(fullUser.createdAt as Date).getTime();
+  if (ageMs > 5 * 60 * 1000) {
+    return apiError('لا يمكن حذف الحساب بهذه الطريقة', 403);
+  }
+
+  const { Enrollment, Payment } = await import('@/models');
+  const [enrollCount, payCount] = await Promise.all([
+    Enrollment.countDocuments({ student: user.id }),
+    Payment.countDocuments({ user: user.id }),
+  ]);
+
+  if (enrollCount > 0 || payCount > 0) {
+    return apiError('لا يمكن حذف الحساب بهذه الطريقة', 403);
+  }
+
+  await User.findByIdAndDelete(user.id);
+  return apiSuccess({ message: 'تم حذف الحساب' });
+});
