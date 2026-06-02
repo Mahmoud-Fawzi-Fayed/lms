@@ -38,7 +38,7 @@ export const GET = withAuth(async (req, user) => {
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
 }, ['admin']);
-ن
+
 // PUT /api/admin/users - Update user (role, active status)
 export const PUT = withAuth(async (req, user) => {
   let body: any;
