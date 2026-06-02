@@ -2,17 +2,63 @@
 
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLang } from '@/contexts/LanguageContext';
 import { t } from '@/lib/i18n';
 
+const METHOD_LABELS: Record<string, string> = {
+  card: 'بطاقة بنكية',
+  fawry: 'فوري',
+  wallet: 'محفظة إلكترونية',
+};
+
 export default function Navbar() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const pathname = usePathname();
   const { lang, setLang } = useLang();
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+
+  // Fetch once per session for students
+  useEffect(() => {
+    if (
+      status !== 'authenticated' ||
+      (session?.user as any)?.role !== 'student' ||
+      fetchedRef.current
+    ) return;
+    fetchedRef.current = true;
+
+    fetch('/api/payments/pending')
+      .then(r => r.json())
+      .then(d => { if (d.success) setPendingPayments(d.data.payments || []); })
+      .catch(() => {});
+  }, [status, session]);
+
+  const resumePayment = async (payment: any) => {
+    setResumingId(payment._id);
+    try {
+      const res = await fetch('/api/payments/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId: payment.course?._id, method: payment.method }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || t('فشل استئناف الدفع', 'Failed to resume payment')); return; }
+      const url = data.data?.iframeUrl || data.data?.paymentUrl;
+      if (url) { window.location.href = url; return; }
+      if (data.data?.enrolled) {
+        setPendingPayments(prev => prev.filter(p => p._id !== payment._id));
+        return;
+      }
+    } catch { /* ignore */ } finally {
+      setResumingId(null);
+    }
+  };
+
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -38,6 +84,7 @@ export default function Navbar() {
   };
 
   return (
+    <>
     <nav className="bg-white/95 backdrop-blur-md border-b border-accent-200 sticky top-0 z-40 shadow-soft animate-fade-in">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center gap-3">
@@ -218,5 +265,52 @@ export default function Navbar() {
         )}
       </div>
     </nav>
+
+    {/* ── Pending / Failed Payment Banner ─────────────────────────────────── */}
+    {/* Shown sitewide for students who registered but haven't completed payment */}
+    {pendingPayments.length > 0 && (
+      <div className="sticky top-16 z-30 w-full">
+        {pendingPayments.map(payment => (
+          <div
+            key={payment._id}
+            className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-3 bg-amber-400 text-amber-950"
+          >
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <span className="text-lg">⚠️</span>
+              <span>
+                {t('لم يكتمل دفع كورس:', 'Payment incomplete for:')}
+                {' '}
+                <strong>{payment.course?.title || t('كورس', 'Course')}</strong>
+                {' — '}
+                {METHOD_LABELS[payment.method] || payment.method}
+                {' · '}
+                {payment.amount} {t('ج.م', 'EGP')}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => resumePayment(payment)}
+                disabled={resumingId === payment._id}
+                className="px-4 py-1.5 bg-amber-900 hover:bg-amber-950 disabled:opacity-60 text-white text-xs font-bold rounded-lg transition-colors"
+              >
+                {resumingId === payment._id
+                  ? t('جاري التحميل...', 'Loading...')
+                  : t('أتمّ الدفع الآن', 'Complete Payment Now')}
+              </button>
+              <button
+                onClick={() => setPendingPayments(prev => prev.filter(p => p._id !== payment._id))}
+                className="p-1 rounded hover:bg-amber-500 transition-colors text-amber-900"
+                title={t('إخفاء', 'Dismiss')}
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+    </>
   );
 }
