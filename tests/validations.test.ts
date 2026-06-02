@@ -4,6 +4,8 @@ import {
   loginSchema,
   submitExamSchema,
   questionSchema,
+  courseSchema,
+  examSchema,
   initiatePaymentSchema,
   initiateExamPaymentSchema,
 } from '@/lib/validations';
@@ -84,72 +86,86 @@ describe('registerSchema', () => {
     }
   });
 
-  it('accepts valid registration with a courseId (purchase flow)', () => {
+  it('accepts valid registration with courseIds (purchase flow)', () => {
     const r = registerSchema.safeParse({
       ...baseRegistration,
       password: 'Password1',
-      courseId: VALID_OBJECT_ID,
+      courseIds: [VALID_OBJECT_ID],
     });
     expect(r.success).toBe(true);
   });
 
-  it('rejects courseId that is not a 24-hex ObjectId', () => {
+  it('rejects courseIds containing an invalid ObjectId', () => {
     const r = registerSchema.safeParse({
       ...baseRegistration,
       password: 'Password1',
-      courseId: 'not-an-objectid',
+      courseIds: ['not-an-objectid'],
     });
     expect(r.success).toBe(false);
   });
 
-  it('rejects courseId that is too short (23 chars)', () => {
+  it('rejects courseIds containing a too-short ObjectId (23 chars)', () => {
     const r = registerSchema.safeParse({
       ...baseRegistration,
       password: 'Password1',
-      courseId: '60d0fe4f5311236168a109c',
+      courseIds: ['60d0fe4f5311236168a109c'],
     });
     expect(r.success).toBe(false);
   });
 
-  it('allows registration without courseId (admin flow, API enforces presence)', () => {
+  it('allows registration without courseIds (account-only flow)', () => {
     const r = registerSchema.safeParse({
       ...baseRegistration,
       password: 'Password1',
     });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.courseId).toBeUndefined();
+    if (r.success) expect(r.data.courseIds).toBeUndefined();
   });
 });
 
-describe('loginSchema', () => {
-  it('requires a non-empty password', () => {
-    expect(loginSchema.safeParse({ email: 'a@b.com', password: '' }).success).toBe(false);
-  });
-});
 
 describe('submitExamSchema', () => {
   it('rejects when examId missing', () => {
-    const r = submitExamSchema.safeParse({ attemptId: 'a', answers: [] });
+    const r = submitExamSchema.safeParse({ attemptId: VALID_OBJECT_ID, answers: [] });
     expect(r.success).toBe(false);
   });
 
   it('rejects when attemptId missing', () => {
-    const r = submitExamSchema.safeParse({ examId: 'e', answers: [] });
+    const r = submitExamSchema.safeParse({ examId: VALID_OBJECT_ID, answers: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects non-ObjectId examId', () => {
+    const r = submitExamSchema.safeParse({ examId: 'not-an-id', attemptId: VALID_OBJECT_ID, answers: [] });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects non-ObjectId attemptId', () => {
+    const r = submitExamSchema.safeParse({ examId: VALID_OBJECT_ID, attemptId: 'bad', answers: [] });
     expect(r.success).toBe(false);
   });
 
   it('accepts empty answers array (caller decides)', () => {
-    const r = submitExamSchema.safeParse({ examId: 'e', attemptId: 'a', answers: [] });
+    const r = submitExamSchema.safeParse({ examId: VALID_OBJECT_ID, attemptId: VALID_OBJECT_ID, answers: [] });
     expect(r.success).toBe(true);
   });
 
   it('rejects answers entries without questionId', () => {
     const r = submitExamSchema.safeParse({
-      examId: 'e',
-      attemptId: 'a',
+      examId: VALID_OBJECT_ID,
+      attemptId: VALID_OBJECT_ID,
       answers: [{ selectedOption: 'x' }],
     });
     expect(r.success).toBe(false);
+  });
+
+  it('accepts answers with both selectedOption and answer (type-agnostic schema)', () => {
+    const r = submitExamSchema.safeParse({
+      examId: VALID_OBJECT_ID,
+      attemptId: VALID_OBJECT_ID,
+      answers: [{ questionId: VALID_OBJECT_ID, selectedOption: 'A', answer: 'also A' }],
+    });
+    expect(r.success).toBe(true);
   });
 });
 
@@ -234,3 +250,220 @@ describe('initiateExamPaymentSchema', () => {
   });
 });
 
+// ── loginSchema ───────────────────────────────────────────────────────────────
+
+describe('loginSchema', () => {
+  it('requires a non-empty password', () => {
+    expect(loginSchema.safeParse({ email: 'a@b.com', password: '' }).success).toBe(false);
+  });
+
+  it('rejects missing email', () => {
+    expect(loginSchema.safeParse({ password: 'Password1' }).success).toBe(false);
+  });
+
+  it('rejects non-email string', () => {
+    expect(loginSchema.safeParse({ email: 'not-an-email', password: 'x' }).success).toBe(false);
+  });
+
+  it('normalizes email to lowercase', () => {
+    const r = loginSchema.safeParse({ email: 'USER@EXAMPLE.COM', password: 'p' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.email).toBe('user@example.com');
+  });
+
+  it('rejects email with surrounding whitespace (trim runs after email check)', () => {
+    // Zod applies .email() before .trim(), so padded emails fail validation.
+    // Frontend forms should always trim before submitting.
+    const r = loginSchema.safeParse({ email: '  user@example.com  ', password: 'p' });
+    expect(r.success).toBe(false);
+  });
+});
+
+// ── courseSchema ──────────────────────────────────────────────────────────────
+
+const baseCourse = {
+  title: 'Mathematics Grade 4',
+  description: 'A comprehensive course for grade 4 students.',
+  price: 100,
+  category: 'math',
+  level: 'beginner' as const,
+} as const;
+
+describe('courseSchema', () => {
+  it('accepts a valid minimal course', () => {
+    const r = courseSchema.safeParse(baseCourse);
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects title shorter than 3 characters', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, title: 'AB' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects title longer than 200 characters', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, title: 'A'.repeat(201) });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects description shorter than 10 characters', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, description: 'Short' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects negative price', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: -1 });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts price = 0 (free course)', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: 0 });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects invalid level enum', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, level: 'expert' });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts all valid levels', () => {
+    for (const level of ['beginner', 'intermediate', 'advanced'] as const) {
+      expect(courseSchema.safeParse({ ...baseCourse, level }).success).toBe(true);
+    }
+  });
+
+  it('rejects discountPrice equal to price', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: 100, discountPrice: 100 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects discountPrice greater than price', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: 100, discountPrice: 150 });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts discountPrice strictly less than price', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: 100, discountPrice: 80 });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts omitted discountPrice regardless of price', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, price: 100 });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects empty category', () => {
+    const r = courseSchema.safeParse({ ...baseCourse, category: '   ' });
+    // category has .trim().min(1), so whitespace-only should fail
+    expect(r.success).toBe(false);
+  });
+});
+
+// ── examSchema ────────────────────────────────────────────────────────────────
+
+const baseExam = {
+  title: 'Midterm Exam',
+  duration: 60,
+  passingScore: 60,
+  maxAttempts: 3,
+  questions: [
+    {
+      type: 'mcq' as const,
+      text: 'What is 2+2?',
+      order: 0,
+      options: [
+        { text: '3', isCorrect: false },
+        { text: '4', isCorrect: true },
+      ],
+    },
+  ],
+};
+
+describe('examSchema', () => {
+  it('accepts a valid exam', () => {
+    const r = examSchema.safeParse(baseExam);
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects title shorter than 3 characters', () => {
+    const r = examSchema.safeParse({ ...baseExam, title: 'AB' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects duration less than 1 minute', () => {
+    const r = examSchema.safeParse({ ...baseExam, duration: 0 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects passingScore above 100', () => {
+    const r = examSchema.safeParse({ ...baseExam, passingScore: 101 });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects maxAttempts less than 1', () => {
+    const r = examSchema.safeParse({ ...baseExam, maxAttempts: 0 });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts passingScore = 0 (always pass)', () => {
+    const r = examSchema.safeParse({ ...baseExam, passingScore: 0 });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts passingScore = 100 (perfect required)', () => {
+    const r = examSchema.safeParse({ ...baseExam, passingScore: 100 });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects paid standalone exam with discountPrice equal to price', () => {
+    const r = examSchema.safeParse({
+      ...baseExam,
+      accessType: 'paid',
+      price: 200,
+      discountPrice: 200,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects paid standalone exam with discountPrice greater than price', () => {
+    const r = examSchema.safeParse({
+      ...baseExam,
+      accessType: 'paid',
+      price: 200,
+      discountPrice: 300,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('accepts paid standalone exam with discountPrice strictly less than price', () => {
+    const r = examSchema.safeParse({
+      ...baseExam,
+      accessType: 'paid',
+      price: 200,
+      discountPrice: 150,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts free exam with any discountPrice (constraint only applies to paid)', () => {
+    const r = examSchema.safeParse({
+      ...baseExam,
+      accessType: 'free',
+      price: 0,
+      discountPrice: 0,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects invalid accessType', () => {
+    const r = examSchema.safeParse({ ...baseExam, accessType: 'trial' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects questions with empty text', () => {
+    const r = examSchema.safeParse({
+      ...baseExam,
+      questions: [{ type: 'mcq', text: '', order: 0 }],
+    });
+    expect(r.success).toBe(false);
+  });
+});

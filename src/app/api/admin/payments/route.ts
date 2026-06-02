@@ -4,8 +4,8 @@ import { Payment } from '@/models';
 // GET /api/admin/payments - List payments for audit and debugging
 export const GET = withAuth(async (req) => {
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get('page') || '1', 10);
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100);
+  const page = Math.max(parseInt(searchParams.get('page') || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10) || 20, 1), 100);
   const status = searchParams.get('status');
   const method = searchParams.get('method');
   const courseId = searchParams.get('courseId');

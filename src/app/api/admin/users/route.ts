@@ -5,8 +5,8 @@ import { User } from '@/models';
 // GET /api/admin/users - List all users
 export const GET = withAuth(async (req, user) => {
   const { searchParams } = new URL(req.url);
-  const page = Math.max(parseInt(searchParams.get('page') || '1'), 1);
-  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20'), 1), 100);
+  const page = Math.max(parseInt(searchParams.get('page') || '1') || 1, 1);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20') || 20, 1), 100);
   const role = searchParams.get('role');
   const rawSearch = searchParams.get('search');
 

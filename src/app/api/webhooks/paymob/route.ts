@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db';
-import { Payment, Enrollment, Course, ExamEnrollment } from '@/models';
+import { Payment, Enrollment, Course, ExamEnrollment, User } from '@/models';
 import { verifyWebhookHmac } from '@/lib/paymob';
 
 function jsonError(message: string, status: number) {
@@ -147,6 +147,11 @@ export async function POST(req: NextRequest) {
           { upsert: true, new: true }
         );
 
+        await User.findByIdAndUpdate(payment.user, {
+          subscriptionStatus: 'active',
+          subscriptionStartedAt: new Date(),
+        });
+
         console.log(
           `Payment SUCCESS: User ${payment.user} enrolled in standalone exam ${payment.exam}`
         );
@@ -183,6 +188,11 @@ export async function POST(req: NextRequest) {
           $inc: { enrollmentCount: 1 },
         });
       }
+
+      await User.findByIdAndUpdate(payment.user, {
+        subscriptionStatus: 'active',
+        subscriptionStartedAt: new Date(),
+      });
 
       console.log(
         `Payment SUCCESS: User ${payment.user} enrolled in course ${payment.course}`

@@ -4,8 +4,8 @@ import { Course } from '@/models';
 // GET /api/admin/courses - List all courses for admin (including drafts)
 export const GET = withAuth(async (req) => {
   const { searchParams } = new URL(req.url);
-  const page = parseInt(searchParams.get('page') || '1', 10);
-  const limit = Math.min(parseInt(searchParams.get('limit') || '100', 10), 200);
+  const page = Math.max(parseInt(searchParams.get('page') || '1', 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '100', 10) || 100, 1), 200);
   const search = searchParams.get('search');
   const status = searchParams.get('status');
 

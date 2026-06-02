@@ -56,4 +56,47 @@ describe('getAcademicYearVariants', () => {
   it('returns [] for empty input', () => {
     expect(getAcademicYearVariants('')).toEqual([]);
   });
+
+  it('returns [] for null/undefined input', () => {
+    expect(getAcademicYearVariants(null)).toEqual([]);
+    expect(getAcademicYearVariants(undefined)).toEqual([]);
+  });
+
+  it('returns only the canonical for a value with no defined aliases', () => {
+    // 'completely_unknown_year' has no alias mappings → only itself
+    const variants = getAcademicYearVariants('completely_unknown_year');
+    expect(variants).toEqual(['completely_unknown_year']);
+  });
+});
+
+describe('normalizeAcademicYear — additional edge cases', () => {
+  it('passes through unknown values (sanitized) unchanged', () => {
+    expect(normalizeAcademicYear('my_custom_year')).toBe('my_custom_year');
+  });
+
+  it('replaces dashes with underscores during sanitization', () => {
+    expect(normalizeAcademicYear('grade-4')).toBe('grade4_primary');
+  });
+
+  it('handles all-whitespace input as empty', () => {
+    expect(normalizeAcademicYear('   ')).toBe('');
+  });
+});
+
+describe('isSameAcademicYear — additional edge cases', () => {
+  it('returns false when both inputs are null', () => {
+    expect(isSameAcademicYear(null, null)).toBe(false);
+  });
+
+  it('returns false when both inputs are undefined', () => {
+    expect(isSameAcademicYear(undefined, undefined)).toBe(false);
+  });
+
+  it('two different unknown values are not equal', () => {
+    expect(isSameAcademicYear('alpha', 'beta')).toBe(false);
+  });
+
+  it('same unknown value normalizes to same string → equal', () => {
+    expect(isSameAcademicYear('special-year', 'special_year')).toBe(true);
+  });
 });

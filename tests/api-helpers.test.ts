@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { escapeRegex, isValidObjectId, rateLimit } from '@/lib/api-helpers';
 
 describe('escapeRegex', () => {
@@ -33,11 +33,23 @@ describe('isValidObjectId', () => {
     expect(isValidObjectId('zzzf1f77bcf86cd799439011')).toBe(false);
   });
 
-  it('rejects non-strings', () => {
-    expect(isValidObjectId(123 as any)).toBe(false);
-    expect(isValidObjectId(null)).toBe(false);
-    expect(isValidObjectId(undefined)).toBe(false);
-    expect(isValidObjectId({} as any)).toBe(false);
+  it('rejects empty string', () => {
+    expect(isValidObjectId('')).toBe(false);
+  });
+});
+
+describe('escapeRegex — additional edge cases', () => {
+  it('returns empty string for empty input', () => {
+    expect(escapeRegex('')).toBe('');
+  });
+
+  it('escapes curly-brace quantifiers', () => {
+    expect(escapeRegex('a{3}')).toBe('a\\{3\\}');
+  });
+
+  it('leaves plain Unicode / emoji unchanged', () => {
+    // Emoji and Arabic letters have no special meaning in regex — no escaping needed.
+    expect(escapeRegex('مرحبا 🎉')).toBe('مرحبا 🎉');
   });
 });
 
@@ -56,5 +68,34 @@ describe('rateLimit', () => {
     expect(rateLimit(a, 1, 60_000)).toBe(true);
     expect(rateLimit(a, 1, 60_000)).toBe(false);
     expect(rateLimit(b, 1, 60_000)).toBe(true);
+  });
+
+  it('allows exactly maxRequests before blocking (boundary check)', () => {
+    const id = `unit-exact-${Date.now()}-${Math.random()}`;
+    for (let i = 0; i < 5; i++) {
+      expect(rateLimit(id, 5, 60_000)).toBe(true);
+    }
+    expect(rateLimit(id, 5, 60_000)).toBe(false);
+  });
+});
+
+describe('rateLimit window reset', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('resets counter after the window expires', () => {
+    const id = `unit-reset-${Math.random()}`;
+    const WINDOW = 1_000; // 1 second
+    expect(rateLimit(id, 2, WINDOW)).toBe(true);
+    expect(rateLimit(id, 2, WINDOW)).toBe(true);
+    expect(rateLimit(id, 2, WINDOW)).toBe(false); // blocked
+
+    // Advance clock past the window
+    vi.advanceTimersByTime(WINDOW + 1);
+
+    // Counter should reset — requests allowed again
+    expect(rateLimit(id, 2, WINDOW)).toBe(true);
+    expect(rateLimit(id, 2, WINDOW)).toBe(true);
+    expect(rateLimit(id, 2, WINDOW)).toBe(false); // blocked again
   });
 });

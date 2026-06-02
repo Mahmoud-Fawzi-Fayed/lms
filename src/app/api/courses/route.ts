@@ -9,8 +9,8 @@ import { getAcademicYearVariants, normalizeAcademicYear } from '@/lib/academic-y
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = Math.min(parseInt(searchParams.get('limit') || '12'), 50);
+    const page = Math.max(parseInt(searchParams.get('page') || '1') || 1, 1);
+    const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '12') || 12, 1), 50);
     const category = searchParams.get('category')?.trim();
     const level = searchParams.get('level');
     const search = searchParams.get('search');
@@ -37,6 +37,16 @@ export async function GET(req: NextRequest) {
         });
       }
       baseFilter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
+    } else if (!user) {
+      // Unauthenticated visitors (e.g., registration course picker) may filter
+      // by a specific academic year via ?academicYear= query param.
+      const yearParam = searchParams.get('academicYear');
+      if (yearParam) {
+        const normalizedYear = normalizeAcademicYear(yearParam);
+        if (normalizedYear) {
+          baseFilter.targetYear = { $in: getAcademicYearVariants(normalizedYear) };
+        }
+      }
     }
 
     if (search) {

@@ -134,4 +134,107 @@ describe('gradeAttempt', () => {
     const wrong = gradeAttempt([q], [{ questionId: 'q1', selectedOption: 'f' }], 60);
     expect(wrong.gradedAnswers[0].isCorrect).toBe(false);
   });
+
+  it('treats "single" question type identically to "mcq"', () => {
+    const q: GradingQuestion = {
+      _id: 'q1',
+      type: 'single',
+      points: 4,
+      options: [
+        { _id: 'q1-X', text: 'Wrong', isCorrect: false },
+        { _id: 'q1-Y', text: 'Right', isCorrect: true },
+      ],
+    };
+    const correct = gradeAttempt([q], [{ questionId: 'q1', selectedOption: 'q1-Y' }], 50);
+    expect(correct.gradedAnswers[0].isCorrect).toBe(true);
+    expect(correct.earnedPoints).toBe(4);
+
+    const wrong = gradeAttempt([q], [{ questionId: 'q1', selectedOption: 'q1-X' }], 50);
+    expect(wrong.gradedAnswers[0].isCorrect).toBe(false);
+    expect(wrong.earnedPoints).toBe(0);
+  });
+
+  it('questions with 0 points contribute 0 to totalPoints and earnedPoints', () => {
+    const q = mkMcq('q1', 0);
+    const r = gradeAttempt([q], [{ questionId: 'q1', selectedOption: 'q1-B' }], 60);
+    expect(r.totalPoints).toBe(0);
+    expect(r.earnedPoints).toBe(0);
+    // score is 0 when totalPoints is 0 (no div-by-zero)
+    expect(r.score).toBe(0);
+  });
+
+  it('score exactly at passingScore counts as passed', () => {
+    // 1 out of 2 correct → 50% score, passing threshold = 50
+    const qs = [mkMcq('q1', 5), mkMcq('q2', 5)];
+    const r = gradeAttempt(
+      qs,
+      [
+        { questionId: 'q1', selectedOption: 'q1-B' }, // correct
+        { questionId: 'q2', selectedOption: 'q2-A' }, // wrong
+      ],
+      50
+    );
+    expect(r.score).toBe(50);
+    expect(r.passed).toBe(true);
+  });
+
+  it('score one point below passingScore counts as failed', () => {
+    // 1 out of 2 correct → 50%, threshold = 51
+    const qs = [mkMcq('q1', 5), mkMcq('q2', 5)];
+    const r = gradeAttempt(
+      qs,
+      [{ questionId: 'q1', selectedOption: 'q1-B' }],
+      51
+    );
+    expect(r.score).toBe(50);
+    expect(r.passed).toBe(false);
+  });
+
+  it('all questions answered correctly → 100% and passed regardless of threshold', () => {
+    const qs = [mkMcq('q1', 5), mkFib('q2', 'answer', 5)];
+    const r = gradeAttempt(
+      qs,
+      [
+        { questionId: 'q1', selectedOption: 'q1-B' },
+        { questionId: 'q2', answer: 'answer' },
+      ],
+      100
+    );
+    expect(r.score).toBe(100);
+    expect(r.passed).toBe(true);
+  });
+
+  it('unknown questionId in answers is silently ignored (no phantom credit)', () => {
+    const r = gradeAttempt(
+      [mkMcq('q1')],
+      [{ questionId: 'ghost-id', selectedOption: 'q1-B' }],
+      60
+    );
+    expect(r.earnedPoints).toBe(0);
+    expect(r.gradedAnswers).toHaveLength(1);
+    expect(r.gradedAnswers[0].isCorrect).toBe(false);
+  });
+
+  it('duplicate answer entries: first matching entry is used', () => {
+    // gradeAttempt uses Array.find() — first answer for questionId wins
+    const r = gradeAttempt(
+      [mkMcq('q1')],
+      [
+        { questionId: 'q1', selectedOption: 'q1-A' }, // wrong — comes first
+        { questionId: 'q1', selectedOption: 'q1-B' }, // right — should NOT be used
+      ],
+      60
+    );
+    expect(r.gradedAnswers[0].isCorrect).toBe(false);
+    expect(r.earnedPoints).toBe(0);
+  });
+
+  it('fillinblank with multi-word answer trims and ignores case', () => {
+    const r = gradeAttempt(
+      [mkFib('q1', '  New York  ')],
+      [{ questionId: 'q1', answer: 'new york' }],
+      60
+    );
+    expect(r.gradedAnswers[0].isCorrect).toBe(true);
+  });
 });

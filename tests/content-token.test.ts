@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import crypto from 'crypto';
 
 beforeAll(() => {
   process.env.CONTENT_SECRET = 'a'.repeat(64);
@@ -147,5 +148,39 @@ describe('content-token', () => {
     const after = Date.now();
     expect(parsed.iat).toBeGreaterThanOrEqual(before);
     expect(parsed.iat).toBeLessThanOrEqual(after);
+  });
+
+  // ── Expiry ────────────────────────────────────────────────────────────────
+  it('rejects a token whose exp is in the past', async () => {
+    const { verifyContentToken } = await import('@/lib/content-token');
+    const secret = process.env.CONTENT_SECRET!;
+    const payload = JSON.stringify({
+      userId: 'u1',
+      courseId: 'c1',
+      lessonId: 'l1',
+      kind: 'raw',
+      iat: Date.now() - 60_000,
+      exp: Date.now() - 1, // already expired
+      nonce: 'deadbeef',
+    });
+    const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    const token = Buffer.from(`${payload}.${hmac}`).toString('base64url');
+    expect(verifyContentToken(token)).toBeNull();
+  });
+
+  it('accepts a token whose exp is in the future (just issued)', async () => {
+    const { generateContentToken, verifyContentToken } = await import('@/lib/content-token');
+    const token = generateContentToken('u1', 'c1', 'l1');
+    // Must still be valid immediately after creation
+    expect(verifyContentToken(token)).not.toBeNull();
+  });
+
+  it('rejects a token with invalid JSON payload', async () => {
+    const { verifyContentToken } = await import('@/lib/content-token');
+    const secret = process.env.CONTENT_SECRET!;
+    const badPayload = 'not-json';
+    const hmac = crypto.createHmac('sha256', secret).update(badPayload).digest('hex');
+    const token = Buffer.from(`${badPayload}.${hmac}`).toString('base64url');
+    expect(verifyContentToken(token)).toBeNull();
   });
 });

@@ -21,18 +21,19 @@ export async function POST(req: NextRequest) {
       return apiError(parsed.error.errors[0].message, 400);
     }
 
-    // Self-registration must be tied to a course purchase.
-    // Admins create users through a separate privileged route.
-    if (!parsed.data.courseId) {
-      return apiError('يجب تحديد كورس للاشتراك فيه لإتمام التسجيل', 400);
-    }
-
     await connectDB();
 
-    // Verify the target course exists and is published before creating the account.
-    const course = await Course.findById(parsed.data.courseId).select('_id isPublished title');
-    if (!course || !course.isPublished) {
-      return apiError('الكورس المحدد غير موجود أو غير منشور', 404);
+    // Validate each selected course exists and is published
+    const courseIds = parsed.data.courseIds || [];
+    if (courseIds.length > 0) {
+      const courses = await Course.find({
+        _id: { $in: courseIds },
+        isPublished: true,
+      }).select('_id').lean();
+
+      if (courses.length !== courseIds.length) {
+        return apiError('أحد الكورسات المحددة غير موجود أو غير منشور', 404);
+      }
     }
 
     // Check if email already exists
@@ -41,8 +42,8 @@ export async function POST(req: NextRequest) {
       return apiError('البريد الإلكتروني مسجل بالفعل', 409);
     }
 
-    // Create user. subscriptionStatus starts as 'active' so the student
-    // can log in immediately and complete the course payment on the next step.
+    // Create user. subscriptionStatus starts as 'none' — it is set to 'active'
+    // only after Paymob confirms payment via the webhook.
     const user = await User.create({
       name: parsed.data.name,
       email: parsed.data.email,
@@ -51,9 +52,8 @@ export async function POST(req: NextRequest) {
       academicYear: parsed.data.academicYear,
       academicTerm: parsed.data.academicTerm,
       role: 'student',
-      subscriptionStatus: 'active',
-      subscriptionMethod: parsed.data.subscriptionMethod,
-      subscriptionStartedAt: new Date(),
+      subscriptionStatus: 'none',
+      ...(parsed.data.subscriptionMethod && { subscriptionMethod: parsed.data.subscriptionMethod }),
     });
 
     return apiSuccess(
@@ -64,8 +64,8 @@ export async function POST(req: NextRequest) {
         role: user.role,
         academicTerm: user.academicTerm,
         subscriptionStatus: user.subscriptionStatus,
-        // Return the courseId so the client can immediately initiate payment.
-        courseId: parsed.data.courseId,
+        // Return the courseIds so the client can immediately initiate payments.
+        courseIds: courseIds,
       },
       201
     );

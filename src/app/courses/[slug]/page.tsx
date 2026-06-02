@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import DOMPurify from 'dompurify';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
@@ -15,13 +15,16 @@ import { t } from '@/lib/i18n';
 
 export default function CourseDetailPage() {
   const { slug } = useParams();
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [course, setCourse] = useState<any>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  // Track whether auto-enroll from post-login redirect has already fired.
+  const autoEnrollFired = useRef(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [previewModal, setPreviewModal] = useState<{ open: boolean; contentUrl: string; type: string; title: string; textContent: string; videoControls?: any }>({ open: false, contentUrl: '', type: '', title: '', textContent: '' });
   const [courseExams, setCourseExams] = useState<any[]>([]);
@@ -29,6 +32,69 @@ export default function CourseDetailPage() {
   useEffect(() => {
     fetchCourse();
   }, [slug]);
+
+  // After login redirect: if the URL contains ?autoEnroll=card|fawry|wallet,
+  // auto-trigger the payment flow once the session is confirmed and course is loaded.
+  useEffect(() => {
+    const autoEnrollMethod = searchParams.get('autoEnroll') as 'card' | 'fawry' | 'wallet' | null;
+    if (
+      !autoEnrollMethod ||
+      autoEnrollFired.current ||
+      sessionStatus !== 'authenticated' ||
+      !course ||
+      isEnrolled
+    ) return;
+
+    if (!['card', 'fawry', 'wallet'].includes(autoEnrollMethod)) return;
+
+    autoEnrollFired.current = true;
+    // Strip the autoEnroll param from the URL so a page refresh doesn't re-trigger.
+    const clean = new URLSearchParams(searchParams.toString());
+    clean.delete('autoEnroll');
+    const newUrl = clean.toString() ? `?${clean.toString()}` : window.location.pathname;
+    window.history.replaceState(null, '', newUrl);
+
+    handleEnroll(autoEnrollMethod);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionStatus, course, isEnrolled]);
+
+  // After a successful payment (user returns to this page and is enrolled),
+  // check for any pending courses queued during registration and kick off
+  // the next payment automatically.
+  useEffect(() => {
+    if (sessionStatus !== 'authenticated' || !isEnrolled) return;
+
+    const PENDING_QUEUE_KEY = 'lms_pending_course_ids';
+    const PENDING_METHOD_KEY = 'lms_pending_payment_method';
+
+    const raw = localStorage.getItem(PENDING_QUEUE_KEY);
+    if (!raw) return;
+
+    let pending: string[] = [];
+    try { pending = JSON.parse(raw); } catch { localStorage.removeItem(PENDING_QUEUE_KEY); return; }
+
+    if (!Array.isArray(pending) || pending.length === 0) {
+      localStorage.removeItem(PENDING_QUEUE_KEY);
+      localStorage.removeItem(PENDING_METHOD_KEY);
+      return;
+    }
+
+    const method = (localStorage.getItem(PENDING_METHOD_KEY) || 'card') as 'card' | 'fawry' | 'wallet';
+    const [nextCourseId, ...rest] = pending;
+
+    // Update queue before navigating away
+    if (rest.length > 0) {
+      localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(rest));
+    } else {
+      localStorage.removeItem(PENDING_QUEUE_KEY);
+      localStorage.removeItem(PENDING_METHOD_KEY);
+    }
+
+    // Navigate to the next pending course's detail page to trigger autoEnroll
+    router.push(`/courses/${nextCourseId}?autoEnroll=${method}`);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEnrolled, sessionStatus]);
 
   const fetchCourse = async () => {
     try {
@@ -62,9 +128,13 @@ export default function CourseDetailPage() {
 
   const handleEnroll = async (method: 'card' | 'fawry' | 'wallet') => {
     if (!session) {
-      // Pass both callbackUrl (so they return to this course after login) and
-      // courseId (so new users land on the purchase-gated registration page).
-      router.push(`/login?callbackUrl=/courses/${slug}&courseId=${course._id}`);
+      // Route unauthenticated users directly to registration with this course pre-selected.
+      // The register page will auto-initiate payment after account creation.
+      // The callbackUrl (containing autoEnroll) is also forwarded so that if the user
+      // already has an account and clicks "Sign in" on the register page, the
+      // autoEnroll mechanism fires automatically after login.
+      const callback = encodeURIComponent(`/courses/${slug}?autoEnroll=${method}`);
+      router.push(`/register?courseId=${course._id}&courseName=${encodeURIComponent(course.title || '')}&callbackUrl=${callback}`);
       return;
     }
 
@@ -111,12 +181,7 @@ export default function CourseDetailPage() {
   };
 
   const handlePreviewLesson = async (lessonId: string) => {
-    if (!session) {
-      router.push(`/login?callbackUrl=/courses/${slug}`);
-      return;
-    }
-
-    // Find the lesson to get its type and title
+    // Resolve lesson metadata first — type determines auth requirements.
     let lessonType = 'video';
     let lessonTitle = '';
     let lessonTextContent = '';
@@ -132,9 +197,18 @@ export default function CourseDetailPage() {
       }
     }
 
-    // Text lessons don't need a content token — show directly
+    // Text previews need no content token — show immediately for everyone.
     if (lessonType === 'text') {
       setPreviewModal({ open: true, contentUrl: '', type: 'text', title: lessonTitle, textContent: lessonTextContent });
+      return;
+    }
+
+    // Video / PDF require a content token — user must be signed in.
+    if (!session) {
+      toast(t('سجّل دخولك أو أنشئ حساباً لمشاهدة هذه المعاينة', 'Sign in or create an account to view this preview'));
+      // Send to register with courseId pre-filled; existing users can click
+      // "Sign in" from the register page to get back here.
+      router.push(`/register?courseId=${course._id}&courseName=${encodeURIComponent(course.title || '')}&callbackUrl=${encodeURIComponent(`/courses/${slug}`)}`);
       return;
     }
 
@@ -214,16 +288,20 @@ export default function CourseDetailPage() {
       <main>
         {/* Course Header */}
         <section className="relative text-white overflow-hidden">
-          {/* Background: thumbnail or gradient fallback */}
-          {course.thumbnail ? (
+          {/* Background: gradient fallback always present; thumbnail overlays when available */}
+          <div className="absolute inset-0 bg-gradient-to-l from-slate-900 to-blue-950" />
+          {course.thumbnail && (
             <>
               <div className="absolute inset-0">
-                <img src={course.thumbnail} alt="" className="w-full h-full object-cover" />
+                <img
+                  src={course.thumbnail}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
+                />
               </div>
               <div className="absolute inset-0 bg-gradient-to-l from-slate-900/95 to-blue-950/90" />
             </>
-          ) : (
-            <div className="absolute inset-0 bg-gradient-to-l from-slate-900 to-blue-950" />
           )}
           <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">

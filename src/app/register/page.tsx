@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -8,18 +8,65 @@ import { signIn } from 'next-auth/react';
 import { t } from '@/lib/i18n';
 import { useLang } from '@/contexts/LanguageContext';
 import { ACADEMIC_YEARS, ACADEMIC_TERMS, academicYearLabel } from '@/lib/validations';
+import { formatPrice } from '@/lib/utils';
+
+// localStorage keys for the pending-payments queue
+const PENDING_QUEUE_KEY = 'lms_pending_course_ids';
+const PENDING_METHOD_KEY = 'lms_pending_payment_method';
+
+interface PickerCourse {
+  _id: string;
+  title: string;
+  price: number;
+  discountPrice?: number;
+  thumbnail?: string;
+  category: string;
+}
 
 function RegisterContent() {
   useLang();
   const router = useRouter();
   const searchParams = useSearchParams();
-  // courseId is REQUIRED — registration is only allowed in the context of buying a course.
-  const courseId = searchParams.get('courseId') || '';
+
+  // courseId may be pre-selected from an "Enroll" button on the course detail page.
+  const preselectedCourseId = searchParams.get('courseId') || '';
   // Sanitize callbackUrl: only relative same-origin paths.
   const rawCallback = searchParams.get('callbackUrl') || '/dashboard';
   const callbackUrl = /^\/(?!\/)/.test(rawCallback) ? rawCallback : '/dashboard';
+  // Course name forwarded from the enroll button (display-only, not trusted for logic).
+  const preselectedCourseName = searchParams.get('courseName') || '';
+  // Course page URL without autoEnroll — used for post-payment redirects.
+  const coursePageUrl = callbackUrl.split('?')[0] || '/dashboard';
 
-  const [step, setStep] = useState<'year' | 'form'>('year');
+  // Steps: year → (courses if no preselected) → form
+  const [step, setStep] = useState<'year' | 'courses' | 'form'>('year');
+
+  // Multi-course selection
+  const [selectedCourseIds, setSelectedCourseIds] = useState<string[]>(
+    preselectedCourseId ? [preselectedCourseId] : []
+  );
+  const [availableCourses, setAvailableCourses] = useState<PickerCourse[]>([]);
+  const [loadingCourses, setLoadingCourses] = useState(false);
+
+  const toggleCourse = (id: string) => {
+    setSelectedCourseIds(prev =>
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
+
+  const goToCourseStep = useCallback(async (year: string) => {
+    setLoadingCourses(true);
+    setStep('courses');
+    try {
+      const res = await fetch(`/api/courses?academicYear=${encodeURIComponent(year)}&limit=50`);
+      const data = await res.json();
+      if (data.success) setAvailableCourses(data.data.courses || []);
+    } catch {
+      toast.error(t('تعذر تحميل الكورسات', 'Failed to load courses'));
+    } finally {
+      setLoadingCourses(false);
+    }
+  }, []);
   const [selectedYear, setSelectedYear] = useState('');
   const [selectedTerm, setSelectedTerm] = useState<'term1' | 'term2' | 'full_year' | ''>('');
   const [formData, setFormData] = useState({
@@ -52,7 +99,7 @@ function RegisterContent() {
       return;
     }
 
-    if (!formData.agreeToSubscription) {
+    if (selectedCourseIds.length > 0 && !formData.agreeToSubscription) {
       toast.error(t('يجب تأكيد الاشتراك لإتمام التسجيل', 'You must confirm subscription to continue'));
       return;
     }
@@ -60,18 +107,24 @@ function RegisterContent() {
     setLoading(true);
 
     try {
+      const body: Record<string, unknown> = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        academicYear: selectedYear,
+        academicTerm: selectedTerm,
+        agreeToSubscription: true,
+        ...(selectedCourseIds.length > 0 && {
+          courseIds: selectedCourseIds,
+          subscriptionMethod: formData.subscriptionMethod,
+        }),
+      };
+
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          phone: formData.phone,
-          academicYear: selectedYear,
-          academicTerm: selectedTerm,
-          subscriptionMethod: formData.subscriptionMethod,
-          agreeToSubscription: formData.agreeToSubscription,            courseId: courseId || undefined,        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
@@ -90,57 +143,66 @@ function RegisterContent() {
       });
 
       if (signInResult?.ok) {
-        // After sign-in, initiate payment for the selected course.
-        if (courseId && formData.subscriptionMethod) {
-          try {
-            const payRes = await fetch('/api/payments/initiate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ courseId, method: formData.subscriptionMethod }),
-            });
-            const payData = await payRes.json();
+        if (selectedCourseIds.length === 0) {
+          router.push('/dashboard');
+          router.refresh();
+          return;
+        }
 
-            if (payData.data?.enrolled) {
-              // Free course — already enrolled
-              toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'));
-              router.push(callbackUrl);
-              router.refresh();
-              return;
-            }
+        // Queue extra courses in localStorage so the course-detail page can
+        // trigger their payments after the first payment completes.
+        const [primaryCourseId, ...remainingCourseIds] = selectedCourseIds;
+        if (remainingCourseIds.length > 0) {
+          localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(remainingCourseIds));
+          localStorage.setItem(PENDING_METHOD_KEY, formData.subscriptionMethod);
+        }
 
-            if (payData.data?.iframeUrl) {
-              // Redirect to Paymob payment iframe
-              window.location.href = payData.data.iframeUrl;
-              return;
-            }
+        // Initiate payment for the first (primary) course.
+        try {
+          const payRes = await fetch('/api/payments/initiate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ courseId: primaryCourseId, method: formData.subscriptionMethod }),
+          });
+          const payData = await payRes.json();
 
-            if (payData.data?.paymentUrl) {
-              window.location.href = payData.data.paymentUrl;
-              return;
-            }
-
-            if (payData.data?.fawryRef) {
-              toast.success(`${t('مرجع فوري:', 'Fawry ref:')} ${payData.data.fawryRef}`);
-              router.push(callbackUrl);
-              router.refresh();
-              return;
-            }
-
-            // Payment initiation failed — go to course page to retry
-            toast.error(payData.error || t('تعذر بدء عملية الدفع. حاول مرة أخرى من صفحة الكورس.', 'Payment failed to start. Try again from the course page.'));
-            router.push(callbackUrl);
+          if (payData.data?.enrolled) {
+            toast.success(t('تم التسجيل بنجاح!', 'Enrolled successfully!'));
+            router.push(coursePageUrl);
             router.refresh();
-          } catch {
-            toast.error(t('حدث خطأ أثناء بدء الدفع. توجه إلى صفحة الكورس.', 'Payment error. Go to the course page to retry.'));
-            router.push(callbackUrl);
-            router.refresh();
+            return;
           }
-        } else {
-          router.push(callbackUrl);
+
+          if (payData.data?.iframeUrl) {
+            window.location.href = payData.data.iframeUrl;
+            return;
+          }
+
+          if (payData.data?.paymentUrl) {
+            window.location.href = payData.data.paymentUrl;
+            return;
+          }
+
+          if (payData.data?.fawryRef) {
+            toast.success(`${t('مرجع فوري:', 'Fawry ref:')} ${payData.data.fawryRef}`);
+            router.push(coursePageUrl);
+            router.refresh();
+            return;
+          }
+
+          toast.error(payData.error || t('تعذر بدء عملية الدفع. حاول مرة أخرى من صفحة الكورس.', 'Payment failed to start. Try again from the course page.'));
+          router.push(coursePageUrl);
+          router.refresh();
+        } catch {
+          toast.error(t('حدث خطأ أثناء بدء الدفع. توجه إلى صفحة الكورس.', 'Payment error. Go to the course page to retry.'));
+          router.push(coursePageUrl);
           router.refresh();
         }
       } else {
-        router.push('/login');
+        // Auto sign-in failed — send to login with context preserved.
+        const qs = new URLSearchParams({ callbackUrl });
+        if (selectedCourseIds.length > 0) qs.set('courseIds', selectedCourseIds.join(','));
+        router.push(`/login?${qs.toString()}`);
       }
     } catch {
       toast.error(t('حدث خطأ. حاول مرة أخرى.', 'An error occurred. Please try again.'));
@@ -182,6 +244,16 @@ function RegisterContent() {
           <p className="text-accent-600 text-center mb-6 text-lg">
             {t('ستظهر لك الكورسات المناسبة لمستواك', 'Courses matching your level will be shown')}
           </p>
+
+          {preselectedCourseName && (
+            <div className="mb-6 flex items-center gap-3 p-3 bg-primary-50 border border-primary-200 rounded-xl">
+              <span className="text-2xl flex-shrink-0">📘</span>
+              <div className="min-w-0">
+                <p className="text-xs text-accent-500">{t('تسجيل للاشتراك في', 'Registering for')}</p>
+                <p className="font-bold text-accent-900 truncate">{preselectedCourseName}</p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-6">
             {/* Primary */}
@@ -286,15 +358,128 @@ function RegisterContent() {
           <button
             type="button"
             disabled={!selectedYear || !selectedTerm}
-            onClick={() => setStep('form')}
+            onClick={() => {
+              // If a course was pre-selected (from an Enroll button), skip the
+              // course-picker step and go straight to the registration form.
+              if (preselectedCourseId) {
+                setStep('form');
+              } else {
+                goToCourseStep(selectedYear);
+              }
+            }}
             className="w-full mt-10 py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-soft"
           >
-            {t('التالي → إنشاء الحساب', 'Next → Create account')}
+            {t('التالي ←', 'Next ←')}
           </button>
 
           <p className="text-center text-accent-600 mt-6 text-sm">
             {t('لديك حساب بالفعل؟', 'Already have an account?')}{' '}
-            <Link href="/login" className="text-primary-600 font-semibold hover:text-primary-700">
+            <Link href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="text-primary-600 font-semibold hover:text-primary-700">
+              {t('سجّل دخولك', 'Sign in')}
+            </Link>
+          </p>
+        </div>
+      )}
+
+      {/* ─────────── Step 2: Course Picker (when no pre-selected course) ─────────── */}
+      {step === 'courses' && (
+        <div className="w-full max-w-3xl bg-white rounded-xl shadow-soft border border-accent-200 p-8">
+          <button
+            type="button"
+            onClick={() => setStep('year')}
+            className="flex items-center gap-2 mb-6 text-sm text-primary-600 hover:text-primary-700 font-semibold"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            {t('تغيير السنة الدراسية', 'Change academic year')}
+            <span className="ms-1 px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full text-xs font-bold">
+              {academicYearLabel(selectedYear)}
+              {selectedTerm ? ` • ${t(
+                selectedTerm === 'term1' ? 'الفصل الأول' : selectedTerm === 'term2' ? 'الفصل الثاني' : 'سنوي',
+                selectedTerm === 'term1' ? 'Term 1' : selectedTerm === 'term2' ? 'Term 2' : 'Full year'
+              )}` : ''}
+            </span>
+          </button>
+
+          <h1 className="text-2xl font-bold text-accent-900 mb-1">
+            {t('اختر الكورسات', 'Select courses')}
+          </h1>
+          <p className="text-accent-600 mb-6 text-sm">
+            {t('يمكنك اختيار أكثر من كورس. ستُكمل الدفع لكل كورس على حدة.', 'You can select more than one course. You will pay for each course separately.')}
+          </p>
+
+          {loadingCourses ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+            </div>
+          ) : availableCourses.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              <p className="text-4xl mb-3">📚</p>
+              <p className="font-medium">{t('لا توجد كورسات متاحة لهذا المستوى الآن', 'No courses available for this level yet')}</p>
+              <p className="text-sm mt-1">{t('يمكنك إكمال التسجيل والاشتراك لاحقاً', 'You can complete registration and subscribe later')}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {availableCourses.map(course => {
+                const selected = selectedCourseIds.includes(course._id);
+                const displayPrice = course.discountPrice ?? course.price;
+                return (
+                  <button
+                    key={course._id}
+                    type="button"
+                    onClick={() => toggleCourse(course._id)}
+                    className={`relative text-left rounded-xl border-2 p-4 transition-all ${
+                      selected
+                        ? 'border-primary-500 bg-primary-50 shadow-md'
+                        : 'border-slate-200 bg-white hover:border-primary-300 hover:bg-primary-50/30'
+                    }`}
+                  >
+                    {selected && (
+                      <span className="absolute top-3 right-3 w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center">
+                        <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </span>
+                    )}
+                    {course.thumbnail && (
+                      <img
+                        src={course.thumbnail}
+                        alt={course.title}
+                        className="w-full h-28 object-cover rounded-lg mb-3"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
+                    <p className="font-semibold text-accent-900 text-sm leading-snug mb-1 pe-6">{course.title}</p>
+                    <p className="text-xs text-slate-500 mb-2">{course.category}</p>
+                    <p className="text-primary-600 font-bold text-sm">
+                      {displayPrice === 0 ? t('مجاني', 'Free') : formatPrice(displayPrice)}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedCourseIds.length > 0 && (
+            <div className="mt-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700 font-medium">
+              {t(`تم اختيار ${selectedCourseIds.length} كورس`, `${selectedCourseIds.length} course(s) selected`)}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setStep('form')}
+            className="w-full mt-8 py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors shadow-soft"
+          >
+            {selectedCourseIds.length > 0
+              ? t(`التالي ← (${selectedCourseIds.length} كورس)`, `Next ← (${selectedCourseIds.length} course(s))`)
+              : t('التالي ← بدون كورس', 'Next ← without course')}
+          </button>
+
+          <p className="text-center text-accent-600 mt-6 text-sm">
+            {t('لديك حساب بالفعل؟', 'Already have an account?')}{' '}
+            <Link href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="text-primary-600 font-semibold hover:text-primary-700">
               {t('سجّل دخولك', 'Sign in')}
             </Link>
           </p>
@@ -305,7 +490,7 @@ function RegisterContent() {
         <div className="w-full max-w-md bg-white rounded-xl shadow-soft border border-accent-200 p-8">
           <button
             type="button"
-            onClick={() => setStep('year')}
+            onClick={() => preselectedCourseId ? setStep('year') : setStep('courses')}
             className="flex items-center gap-2 mb-8 text-sm text-primary-600 hover:text-primary-700 font-semibold"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -324,8 +509,34 @@ function RegisterContent() {
           <h1 className="text-3xl font-bold text-accent-900 mb-2">
             {t('إنشاء حساب', 'Create an account')}
           </h1>
+          {/* Show selected courses */}
+          {selectedCourseIds.length > 0 && (
+            <div className="flex items-center gap-3 p-3 bg-primary-50 border border-primary-200 rounded-xl mb-4">
+              <span className="text-2xl flex-shrink-0">📘</span>
+              <div className="min-w-0">
+                {preselectedCourseName ? (
+                  <>
+                    <p className="text-xs text-accent-500">{t('تسجيل للاشتراك في', 'Registering for')}</p>
+                    <p className="font-bold text-accent-900 truncate">{preselectedCourseName}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs text-accent-500">{t('الكورسات المختارة', 'Selected courses')}</p>
+                    <p className="font-bold text-accent-900">{selectedCourseIds.length} {t('كورس', 'course(s)')}</p>
+                  </>
+                )}
+              </div>
+              {selectedCourseIds.length > 1 && (
+                <span className="ms-auto flex-shrink-0 px-2 py-0.5 bg-primary-200 text-primary-800 rounded-full text-xs font-bold">
+                  +{selectedCourseIds.length - 1}
+                </span>
+              )}
+            </div>
+          )}
           <p className="text-accent-600 mb-8">
-            {t('سجّل بياناتك لإتمام عملية الشراء', 'Fill in your details to complete your purchase')}
+            {selectedCourseIds.length > 0
+              ? t('سجّل بياناتك لإتمام عملية الشراء', 'Fill in your details to complete your purchase')
+              : t('سجّل بياناتك لإنشاء حسابك', 'Fill in your details to create your account')}
           </p>
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
@@ -397,19 +608,27 @@ function RegisterContent() {
               />
             </div>
 
+            {/* Payment section — only shown when courses are selected */}
+            {selectedCourseIds.length > 0 && (
             <div className="border border-primary-200 rounded-xl p-4 bg-primary-50/50 space-y-3">
               <h3 className="text-sm font-bold text-accent-900">
-                {t('الاشتراك أثناء التسجيل', 'Subscription during registration')}
+                {t('طريقة الدفع', 'Payment method')}
               </h3>
+              <p className="text-xs text-accent-500">
+                {selectedCourseIds.length === 1
+                  ? t('ستُحوَّل إلى بوابة الدفع لإتمام الشراء بعد إنشاء حسابك مباشرةً.', 'You will be redirected to the payment gateway right after creating your account.')
+                  : t(`ستُحوَّل إلى بوابة الدفع للكورس الأول. الكورسات المتبقية (${selectedCourseIds.length - 1}) ستدفع تباعاً.`,
+                      `You will pay for the first course now. The remaining ${selectedCourseIds.length - 1} course(s) will be paid in sequence.`)}
+              </p>
 
               <select
                 value={formData.subscriptionMethod}
                 onChange={e => setFormData({ ...formData, subscriptionMethod: e.target.value as 'card' | 'fawry' | 'wallet' })}
                 className="w-full px-4 py-3 border border-accent-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-all bg-white"
               >
-                <option value="card">{t('بطاقة بنكية', 'Bank card')}</option>
-                <option value="fawry">{t('فوري', 'Fawry')}</option>
-                <option value="wallet">{t('محفظة إلكترونية', 'Wallet')}</option>
+                <option value="card">{t('💳 بطاقة بنكية', '💳 Bank card')}</option>
+                <option value="fawry">{t('🏪 فوري', '🏪 Fawry')}</option>
+                <option value="wallet">{t('📱 محفظة إلكترونية', '📱 Wallet')}</option>
               </select>
 
               <label className="flex items-start gap-2 text-sm text-accent-700">
@@ -420,14 +639,15 @@ function RegisterContent() {
                   className="mt-1"
                 />
                 <span>
-                  {t('أوافق على إتمام الاشتراك مع التسجيل. التسجيل بدون اشتراك غير متاح.', 'I agree to complete subscription with registration. Registration without subscription is not available.')}
+                  {t('أوافق على الانتقال لإتمام الدفع بعد إنشاء الحساب لتفعيل الكورس.', 'I agree to proceed with payment after account creation to activate the course.')}
                 </span>
               </label>
             </div>
+            )}
 
             <button
               type="submit"
-              disabled={loading || !formData.agreeToSubscription}
+              disabled={loading || (selectedCourseIds.length > 0 && !formData.agreeToSubscription)}
               className="w-full py-3 bg-primary-500 hover:bg-primary-600 text-white font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-4 shadow-soft"
             >
               {loading ? (

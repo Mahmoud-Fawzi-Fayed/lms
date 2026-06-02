@@ -203,17 +203,17 @@ export default function CoursesPage() {
                 >
                   {/* Thumbnail */}
                   <div className="relative h-48 bg-gradient-to-br from-primary-100 to-primary-200 overflow-hidden">
-                    {course.thumbnail ? (
+                    <div className="flex items-center justify-center h-full">
+                      <span className="text-6xl">📘</span>
+                    </div>
+                    {course.thumbnail && (
                       <img
                         src={course.thumbnail}
                         alt={course.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                       />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <span className="text-6xl">📘</span>
-                      </div>
                     )}
                     <div className="absolute top-3 left-3">
                       <span className="px-3 py-1 bg-white rounded-lg text-xs font-semibold text-primary-700 shadow-sm">

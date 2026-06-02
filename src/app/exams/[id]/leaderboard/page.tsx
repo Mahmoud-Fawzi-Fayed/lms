@@ -15,6 +15,7 @@ export default function LeaderboardPage() {
   const { data: session } = useSession();
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -26,9 +27,11 @@ export default function LeaderboardPage() {
       const data = await res.json();
       if (data.success) {
         setLeaderboard(data.data.leaderboard);
+      } else {
+        setError(data.error || t('تعذر تحميل قائمة المتصدرين', 'Failed to load leaderboard'));
       }
     } catch {
-      toast.error(t('فشل تحميل قائمة المتصدرين', 'Failed to load leaderboard'));
+      setError(t('فشل الاتصال بالخادم', 'Connection failed'));
     } finally {
       setLoading(false);
     }
@@ -78,6 +81,26 @@ export default function LeaderboardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          ) : error ? (
+            <div className="text-center py-16 bg-white rounded-2xl">
+              <div className="text-5xl mb-4">🔒</div>
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">{error}</h3>
+              {!session ? (
+                <Link
+                  href={`/login?callbackUrl=/exams/${id}/leaderboard`}
+                  className="mt-4 inline-block px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-semibold"
+                >
+                  {t('سجّل دخولك للمتابعة', 'Log in to continue')}
+                </Link>
+              ) : (
+                <Link
+                  href={`/exams/${id}`}
+                  className="mt-4 inline-block px-6 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-semibold"
+                >
+                  {t('اذهب للاختبار', 'Go to exam')}
+                </Link>
+              )}
             </div>
           ) : leaderboard.length === 0 ? (
             <div className="text-center py-16 bg-white rounded-2xl">

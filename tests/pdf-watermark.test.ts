@@ -40,4 +40,26 @@ describe('watermarkPdf', () => {
     const result = await watermarkPdf(huge, 'u@x.com');
     expect(result.byteLength).toBe(huge.byteLength);
   });
+
+  it('includes meta line when provided', async () => {
+    const original = await makeRealPdf();
+    // Watermark with a meta second line — result must be larger than a stamp-only watermark.
+    const withMeta    = await watermarkPdf(original, 'user@example.com', '1.2.3.4 · 2025-01-01Z');
+    const withoutMeta = await watermarkPdf(original, 'user@example.com');
+    expect(Buffer.from(withMeta).slice(0, 4).toString()).toBe('%PDF');
+    // The meta param adds extra text operations, so the with-meta PDF must be larger.
+    expect(withMeta.byteLength).toBeGreaterThan(withoutMeta.byteLength);
+  });
+
+  it('handles a multi-page PDF correctly', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([400, 400]);
+    doc.addPage([400, 400]);
+    doc.addPage([400, 400]);
+    const multiPagePdf = Buffer.from(await doc.save());
+    const stamped = await watermarkPdf(multiPagePdf, 'user@example.com', 'meta-info');
+    expect(Buffer.from(stamped).slice(0, 4).toString()).toBe('%PDF');
+    const re = await PDFDocument.load(stamped);
+    expect(re.getPageCount()).toBe(3);
+  });
 });

@@ -44,7 +44,7 @@ export default function ExamsPage() {
     router.push(`/exams/take/${examId}`);
   };
 
-  const handleBuyExam = async (examId: string) => {
+  const handleBuyExam = async (examId: string, method: 'card' | 'fawry' | 'wallet' = 'card') => {
     if (!session) {
       router.push(`/login?callbackUrl=/exams`);
       return;
@@ -55,7 +55,7 @@ export default function ExamsPage() {
       const res = await fetch('/api/payments/exams/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ examId, method: 'card' }),
+        body: JSON.stringify({ examId, method }),
       });
 
       const data = await res.json();
@@ -156,27 +156,49 @@ export default function ExamsPage() {
                       )}
                     </div>
 
-                    <div className="mt-auto flex gap-2">
+                    <div className="mt-auto flex flex-col gap-2">
                       {canAccess ? (
                         <button
                           onClick={() => handleStartExam(exam._id)}
-                          className="flex-1 px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-semibold"
+                          className="w-full px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-sm font-semibold"
                         >
                           {t('ابدأ الاختبار', 'Start exam')}
                         </button>
                       ) : (
-                        <button
-                          onClick={() => handleBuyExam(exam._id)}
-                          disabled={payingExamId === exam._id}
-                          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold disabled:opacity-60"
-                        >
-                          {payingExamId === exam._id ? t('جاري التحويل...', 'Redirecting...') : t('شراء الاختبار', 'Purchase exam')}
-                        </button>
+                        <>
+                          <p className="text-xs text-accent-500 text-center">{t('اختر طريقة الدفع', 'Choose payment method')}</p>
+                          <div className="grid grid-cols-3 gap-1">
+                            <button
+                              onClick={() => handleBuyExam(exam._id, 'card')}
+                              disabled={payingExamId === exam._id}
+                              className="px-2 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-xs font-semibold disabled:opacity-60 flex flex-col items-center gap-1"
+                            >
+                              <span>💳</span>
+                              <span>{payingExamId === exam._id ? '...' : t('بطاقة', 'Card')}</span>
+                            </button>
+                            <button
+                              onClick={() => handleBuyExam(exam._id, 'fawry')}
+                              disabled={payingExamId === exam._id}
+                              className="px-2 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors text-xs font-semibold disabled:opacity-60 flex flex-col items-center gap-1"
+                            >
+                              <span>🏪</span>
+                              <span>{payingExamId === exam._id ? '...' : t('فوري', 'Fawry')}</span>
+                            </button>
+                            <button
+                              onClick={() => handleBuyExam(exam._id, 'wallet')}
+                              disabled={payingExamId === exam._id}
+                              className="px-2 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-xs font-semibold disabled:opacity-60 flex flex-col items-center gap-1"
+                            >
+                              <span>📱</span>
+                              <span>{payingExamId === exam._id ? '...' : t('محفظة', 'Wallet')}</span>
+                            </button>
+                          </div>
+                        </>
                       )}
 
                       <Link
                         href={`/exams/${exam._id}/leaderboard`}
-                        className="px-4 py-2 border border-accent-200 rounded-lg text-sm text-accent-700 hover:bg-accent-50"
+                        className="w-full px-4 py-2 border border-accent-200 rounded-lg text-sm text-accent-700 hover:bg-accent-50 text-center"
                       >
                         {t('المتصدرون', 'Leaderboard')}
                       </Link>

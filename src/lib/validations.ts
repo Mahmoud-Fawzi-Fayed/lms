@@ -52,11 +52,12 @@ export const registerSchema = z.object({
   phone: z.string().optional(),
   academicYear: z.enum(academicYearValues as [AcademicYear, ...AcademicYear[]]),
   academicTerm: z.enum(academicTermValues as [AcademicTerm, ...AcademicTerm[]]),
-  // courseId is required for self-registration (must be buying something).
-  // Optional here so the schema can be reused by admin flows; the register
-  // API endpoint enforces its presence for student self-registration.
-  courseId: z.string().regex(objectIdRegex, 'معرف الكورس غير صالح').optional(),
-  subscriptionMethod: z.enum(['card', 'fawry', 'wallet']),
+  // courseIds: array of selected course ObjectIds. Optional — users can
+  // register without selecting courses and add them later from the dashboard.
+  // When provided, at least one must be a valid ObjectId.
+  courseIds: z.array(z.string().regex(objectIdRegex, 'معرف الكورس غير صالح')).min(1, 'يجب اختيار كورس واحد على الأقل').optional(),
+  // subscriptionMethod is required only when courseIds are provided.
+  subscriptionMethod: z.enum(['card', 'fawry', 'wallet']).optional(),
   agreeToSubscription: z.literal(true, {
     errorMap: () => ({ message: 'يجب تأكيد الاشتراك لإتمام التسجيل' }),
   }),
@@ -74,6 +75,14 @@ export const registerSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['academicTerm'],
       message: 'اختر الفصل الدراسي الأول أو الثاني',
+    });
+  }
+  // subscriptionMethod is required when courses are selected
+  if (val.courseIds && val.courseIds.length > 0 && !val.subscriptionMethod) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['subscriptionMethod'],
+      message: 'اختر طريقة الدفع',
     });
   }
 });
@@ -131,6 +140,14 @@ export const courseSchema = z.object({
       videoControls: videoControlsSchema,
     })),
   })).optional(),
+}).superRefine((val, ctx) => {
+  if (val.discountPrice !== undefined && val.discountPrice >= val.price) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['discountPrice'],
+      message: 'سعر الخصم يجب أن يكون أقل من السعر الأصلي',
+    });
+  }
 });
 
 // Exam Schemas
@@ -168,12 +185,24 @@ export const examSchema = z.object({
   isPreview: z.boolean().default(false),
   isPublished: z.boolean().default(false),
   questions: z.array(questionSchema),
+}).superRefine((val, ctx) => {
+  if (
+    val.accessType === 'paid' &&
+    val.discountPrice !== undefined &&
+    val.discountPrice >= val.price
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['discountPrice'],
+      message: 'سعر الخصم يجب أن يكون أقل من السعر الأصلي',
+    });
+  }
 });
 
 // Exam Submit Schema
 export const submitExamSchema = z.object({
-  examId: z.string().min(1),
-  attemptId: z.string().min(1),
+  examId: objectIdSchema,
+  attemptId: objectIdSchema,
   answers: z.array(
     z.object({
       questionId: z.string().min(1),
