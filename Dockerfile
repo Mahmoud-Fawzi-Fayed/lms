@@ -3,14 +3,21 @@
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Skip lifecycle scripts (the `postinstall` hook needs scripts/ and public/,
+# which aren't copied yet at this stage). We re-sync the PDF worker explicitly
+# in the builder stage below.
+RUN npm ci --ignore-scripts
 
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Make sure public/pdf.worker.min.mjs matches the installed pdfjs-dist version.
+# PDF.js refuses to load if API and worker versions disagree; this prevents
+# silent worker drift between the bundle and the static file we serve.
+RUN node scripts/sync-pdf-worker.js
 RUN --mount=type=secret,id=lms_env,target=/app/.env.production \
-  npm run build && npm prune --omit=dev
+  npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
