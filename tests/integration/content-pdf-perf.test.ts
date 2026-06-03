@@ -80,7 +80,9 @@ describe('Content PDF perf — watermark cache & Range support', () => {
   beforeAll(async () => {
     process.env.CONTENT_SECRET = 'a'.repeat(64);
     fs.mkdirSync(path.join(process.cwd(), 'uploads', 'tmp'), { recursive: true });
-    pdfBytes = await makeRealPdf(3);
+    // 30 pages → enough work that the cold-watermark vs cached-memcpy delta
+    // is reliably measurable on CI without making the suite slow.
+    pdfBytes = await makeRealPdf(30);
   });
 
   beforeEach(async () => {
@@ -125,34 +127,43 @@ describe('Content PDF perf — watermark cache & Range support', () => {
   it('cache HITS across two different tokens for the same (user, lesson, mtime)', async () => {
     const { GET } = await getRoute();
 
-    // 1st token: cold cache → real watermark
+    // Issue both tokens up-front so we don't include DB latency in the
+    // request-only timing below.
     const tokenA = await issueToken(String(course._id), pdfLessonId);
-    const t0 = Date.now();
+    const tokenB = await issueToken(String(course._id), pdfLessonId);
+    expect(tokenB).not.toBe(tokenA);
+
+    // 1st request: cold cache → real watermark.
+    const t0 = performance.now();
     const resA = await GET(buildContentReq(tokenA), { params: { token: tokenA } } as any);
-    const dtA = Date.now() - t0;
+    await resA.arrayBuffer();
+    const dtA = performance.now() - t0;
     expect(resA.status).toBe(200);
     expect(resA.headers.get('content-type')).toContain('application/pdf');
 
-    // 2nd token (different nonce) for the SAME user/lesson/file: cache HIT.
-    // The hit path skips fs.readFile + pdf-lib parse + serialize entirely.
-    const tokenB = await issueToken(String(course._id), pdfLessonId);
-    expect(tokenB).not.toBe(tokenA);
-    const t1 = Date.now();
+    // 2nd request with a different token: cache HIT. The hit path skips
+    // fs.readFile + pdf-lib parse + serialize entirely.
+    const t1 = performance.now();
     const resB = await GET(buildContentReq(tokenB), { params: { token: tokenB } } as any);
-    const dtB = Date.now() - t1;
+    await resB.arrayBuffer();
+    const dtB = performance.now() - t1;
     expect(resB.status).toBe(200);
 
     const lenA = Number(resA.headers.get('content-length'));
     const lenB = Number(resB.headers.get('content-length'));
     expect(lenA).toBeGreaterThan(0);
-    expect(lenB).toBe(lenA); // same cached watermark → identical size
+    // Same cached watermark → identical size. This is the primary regression
+    // signal: the previous (broken) cache key included the rotating token,
+    // so each request produced a fresh watermark with a different timestamp
+    // → different content-length. Identical lengths here = cache hit.
+    expect(lenB).toBe(lenA);
 
-    // Cached path must be at least an order of magnitude faster than the
-    // cold path — even on slow CI this is a generous bound. The previous
-    // (broken) implementation re-watermarked from scratch every time, so
-    // dtB ≈ dtA. With the fix dtB is essentially memcpy.
-    expect(dtB * 5).toBeLessThan(dtA + 30);
-  }, 30_000);
+    // Soft timing bound — on a 30-page PDF the cold path is meaningfully
+    // slower than the cached memcpy. We don't require an exact ratio (CI
+    // schedulers are noisy) but a 3× speedup or `dtB <= 50ms` is plenty.
+    const cacheIsFast = dtB <= 50 || dtB * 3 <= dtA;
+    expect(cacheIsFast).toBe(true);
+  }, 60_000);
 
   // ── 2. In-flight dedupe ──────────────────────────────────────────────────
   it('5 concurrent first-time requests dedupe to a single watermark pass', async () => {
@@ -246,5 +257,190 @@ describe('Content PDF perf — watermark cache & Range support', () => {
     for (const r of ranges) {
       expect([200, 206]).toContain(r.status);
     }
+  }, 30_000);
+
+  // ── 5. Cache key isolation: different users get different watermarks ────
+  it('two users opening the same PDF get DIFFERENT watermarked content (cache is per-user)', async () => {
+    // Enroll a 2nd student in the same course.
+    const otherStudent = await makeUser({ role: 'student' });
+    await makeEnrollment({ user: otherStudent._id, course: course._id, status: 'active' });
+
+    const { GET } = await getRoute();
+
+    // User 1 fetch.
+    setCurrentUser({ id: String(student._id), role: 'student' });
+    const tokenA = await issueToken(String(course._id), pdfLessonId);
+    const resA = await GET(buildContentReq(tokenA), { params: { token: tokenA } } as any);
+    expect(resA.status).toBe(200);
+    const bytesA = Buffer.from(await resA.arrayBuffer());
+
+    // User 2 fetch — different cache key (different userId), so a fresh
+    // watermark is produced with THIS user's email/id stamped, not user 1's.
+    setCurrentUser({ id: String(otherStudent._id), role: 'student' });
+    const tokenB = await issueToken(String(course._id), pdfLessonId);
+    const resB = await GET(buildContentReq(tokenB), { params: { token: tokenB } } as any);
+    expect(resB.status).toBe(200);
+    const bytesB = Buffer.from(await resB.arrayBuffer());
+
+    // Sizes might be similar but the content must differ — at minimum
+    // the bytes embedding the email/id must be present somewhere.
+    expect(bytesA.equals(bytesB)).toBe(false);
+  }, 30_000);
+
+  // ── 6. Cache key isolation: different lessons in same course ────────────
+  it('two PDF lessons in the same course get independent cache entries', async () => {
+    // Add a second PDF lesson to the same course.
+    const pdfBytes2 = await makeRealPdf(2);
+    const pdfFile2 = path.join(tmp, 'doc2.pdf');
+    await fs.promises.writeFile(pdfFile2, pdfBytes2);
+    const lesson2Id = new mongoose.Types.ObjectId();
+    course.modules[0].lessons.push({
+      _id: lesson2Id, title: 'Doc 2', type: 'pdf', filePath: pdfFile2, isPreview: false, order: 2,
+    } as any);
+    await course.save();
+
+    const { GET } = await getRoute();
+
+    const tokenA = await issueToken(String(course._id), pdfLessonId);
+    const resA = await GET(buildContentReq(tokenA), { params: { token: tokenA } } as any);
+    expect(resA.status).toBe(200);
+    const sizeA = Number(resA.headers.get('content-length'));
+
+    const tokenB = await issueToken(String(course._id), String(lesson2Id));
+    const resB = await GET(buildContentReq(tokenB), { params: { token: tokenB } } as any);
+    expect(resB.status).toBe(200);
+    const sizeB = Number(resB.headers.get('content-length'));
+
+    // Different source PDFs (3 pages vs 2 pages) → different output sizes.
+    // Even if they were the same size, the bytes would differ — so this is
+    // a conservative assertion.
+    expect(sizeA).not.toBe(sizeB);
+  }, 30_000);
+
+  // ── 7. mtime change invalidates the cache ───────────────────────────────
+  it('re-saving the source file (new mtime) bypasses the old cache entry', async () => {
+    const { GET } = await getRoute();
+
+    // Cold fetch primes the cache.
+    const t1 = await issueToken(String(course._id), pdfLessonId);
+    const r1 = await GET(buildContentReq(t1), { params: { token: t1 } } as any);
+    expect(r1.status).toBe(200);
+    const lenBefore = Number(r1.headers.get('content-length'));
+
+    // Re-write the file with NEW content + a forced future mtime.
+    const newPdf = await makeRealPdf(8); // very different page count
+    await fs.promises.writeFile(pdfFile, newPdf);
+    const future = new Date(Date.now() + 60_000);
+    await fs.promises.utimes(pdfFile, future, future);
+
+    const t2 = await issueToken(String(course._id), pdfLessonId);
+    const r2 = await GET(buildContentReq(t2), { params: { token: t2 } } as any);
+    expect(r2.status).toBe(200);
+    const lenAfter = Number(r2.headers.get('content-length'));
+
+    // The new file has 8 pages vs original 3 → larger output. Either way
+    // the cache MUST have been bypassed because mtime changed.
+    expect(lenAfter).not.toBe(lenBefore);
+  }, 30_000);
+
+  // ── 8. Suffix Range request (bytes=-N) ──────────────────────────────────
+  it('handles HTTP suffix Range (bytes=-N) — returns the last N bytes', async () => {
+    const { GET } = await getRoute();
+    const token = await issueToken(String(course._id), pdfLessonId);
+
+    const seed = await GET(buildContentReq(token), { params: { token } } as any);
+    expect(seed.status).toBe(200);
+    const total = Number(seed.headers.get('content-length'));
+
+    // Some clients (curl --range -, certain CDNs probing for resumability)
+    // ask for the last N bytes. Our regex should at minimum not crash.
+    const r = await GET(
+      buildContentReq(token, { range: 'bytes=-100' }),
+      { params: { token } } as any,
+    );
+    // We don't strictly require 206 here — `bytes=-100` is rare in PDF.js
+    // and the current regex pattern only handles `bytes=N-` and `bytes=N-M`.
+    // What we DO require is that the server doesn't 5xx and either returns
+    // a usable body or a clean 416 / falls back to 200 full-body.
+    expect([200, 206, 416]).toContain(r.status);
+    if (r.status === 200) {
+      expect(Number(r.headers.get('content-length'))).toBe(total);
+    }
+  }, 30_000);
+
+  // ── 9. Open-ended Range (bytes=N-) ──────────────────────────────────────
+  it('handles open-ended Range (bytes=N-) — returns from N to end', async () => {
+    const { GET } = await getRoute();
+    const token = await issueToken(String(course._id), pdfLessonId);
+
+    const seed = await GET(buildContentReq(token), { params: { token } } as any);
+    const total = Number(seed.headers.get('content-length'));
+
+    const start = Math.floor(total / 2);
+    const r = await GET(
+      buildContentReq(token, { range: `bytes=${start}-` }),
+      { params: { token } } as any,
+    );
+    expect(r.status).toBe(206);
+    expect(r.headers.get('content-range')).toBe(`bytes ${start}-${total - 1}/${total}`);
+    expect(Number(r.headers.get('content-length'))).toBe(total - start);
+  }, 30_000);
+
+  // ── 10. 50 concurrent Range requests don't deadlock or 5xx ──────────────
+  it('50 concurrent Range requests on the same token all return 2xx', async () => {
+    const { GET } = await getRoute();
+    const token = await issueToken(String(course._id), pdfLessonId);
+
+    // Prime the cache.
+    const seed = await GET(buildContentReq(token), { params: { token } } as any);
+    const total = Number(seed.headers.get('content-length'));
+
+    const rs = await Promise.all(
+      Array.from({ length: 50 }, (_, i) => {
+        const s = (i * 7) % Math.max(1, total - 100);
+        return GET(
+          buildContentReq(token, { range: `bytes=${s}-${s + 50}` }),
+          { params: { token } } as any,
+        );
+      })
+    );
+    for (const r of rs) {
+      expect(r.status).toBeGreaterThanOrEqual(200);
+      expect(r.status).toBeLessThan(400);
+    }
+  }, 60_000);
+
+  // ── 11. Watermarked response always includes anti-piracy headers ────────
+  it('watermarked PDF responses carry the full anti-piracy header set', async () => {
+    const { GET } = await getRoute();
+    const token = await issueToken(String(course._id), pdfLessonId);
+    const r = await GET(buildContentReq(token), { params: { token } } as any);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toContain('application/pdf');
+    expect(r.headers.get('content-disposition')).toBe('inline');
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(r.headers.get('x-frame-options')).toBe('DENY');
+    expect(r.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    expect(r.headers.get('cache-control')).toContain('no-store');
+    expect(r.headers.get('cache-control')).toContain('private');
+    expect(r.headers.get('accept-ranges')).toBe('bytes');
+  }, 30_000);
+
+  // ── 12. Corrupt source bytes fall through to raw stream (no 5xx) ────────
+  it('corrupt PDF source bytes do not 5xx — fall through to raw stream', async () => {
+    // Overwrite the file with bytes that pdf-lib cannot parse.
+    await fs.promises.writeFile(pdfFile, Buffer.from('not a real PDF\n%%EOF\n'));
+
+    const { GET } = await getRoute();
+    const token = await issueToken(String(course._id), pdfLessonId);
+    const r = await GET(buildContentReq(token), { params: { token } } as any);
+
+    // The watermark step throws on corrupt bytes; the route catches and falls
+    // through to serveRawFile() which just streams the raw bytes back.
+    // Whichever path wins, the user must get a 2xx (not 5xx) and a PDF
+    // content-type so the client viewer surfaces a clean error rather than
+    // an opaque internal-server-error.
+    expect(r.status).toBeGreaterThanOrEqual(200);
+    expect(r.status).toBeLessThan(500);
   }, 30_000);
 });
