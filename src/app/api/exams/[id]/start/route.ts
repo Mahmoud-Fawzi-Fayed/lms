@@ -100,21 +100,38 @@ export const POST = withAuth(async (req, user) => {
     points: q.points,
     order: q.order,
     correctAnswer: q.correctAnswer,
+    // BUG-FIX: include `explanation` so the submit response (when showResults=true)
+    // can echo it back to the student. Previous snapshot omitted it, leaving
+    // result.details[i].explanation always undefined.
+    explanation: q.explanation,
     options: Array.isArray(q.options)
       ? q.options.map((o: any) => ({ _id: o._id, text: o.text, isCorrect: !!o.isCorrect }))
       : [],
   }));
 
-  const attempt = await ExamAttempt.create({
-    user: user.id,
-    exam: examId,
-    course: exam.course,
-    attemptNumber: previousAttempts + 1,
-    startedAt: new Date(),
-    status: 'in-progress',
-    answers: [],
-    questionSnapshot: snapshot,
-  });
+  // BUG-FIX (concurrency): wrap create() in try/catch — the unique index on
+  // (user, exam, attemptNumber) will throw E11000 if a parallel start already
+  // claimed the same attemptNumber. We return 409 so the client retries —
+  // which will then either resume the now-existing in-progress attempt or fail
+  // the maxAttempts check on its next request.
+  let attempt;
+  try {
+    attempt = await ExamAttempt.create({
+      user: user.id,
+      exam: examId,
+      course: exam.course,
+      attemptNumber: previousAttempts + 1,
+      startedAt: new Date(),
+      status: 'in-progress',
+      answers: [],
+      questionSnapshot: snapshot,
+    });
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return apiError('محاولة بدء متزامنة، يرجى المحاولة مرة أخرى', 409);
+    }
+    throw err;
+  }
 
   // SECURITY: never return the questionSnapshot — it contains correctAnswer / isCorrect
   // for every option. Mongoose `select:false` only applies to DB reads; the in-memory

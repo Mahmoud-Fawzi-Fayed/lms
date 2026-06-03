@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:all": "vitest run && vitest run --config vitest.integration.config.ts"
+    "test:all": "vitest run && vitest run --config vitest.integration.config.ts",
+    "sync-pdf-worker": "node scripts/sync-pdf-worker.js",
+    "postinstall": "node scripts/sync-pdf-worker.js"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.0.4",

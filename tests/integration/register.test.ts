@@ -93,6 +93,57 @@ describe('POST /api/auth/register — course context guard', () => {
     expect(json.error).toBeTruthy();
   });
 
+  // REGRESSION (Bug-fix C): previously any published course would be accepted at
+  // registration even if its targetYear did NOT match the student's academicYear.
+  // This created accounts pre-loaded with courses they could never legitimately access.
+  it('REGRESSION: rejects courseId whose targetYear differs from the student academicYear', async () => {
+    const sec2Course = await makeCourse({
+      instructor: inst._id, price: 100, isPublished: true, targetYear: 'grade2_secondary',
+    });
+    const { POST } = await registerApi();
+    const res = await POST(registerReq({
+      ...VALID_BASE,                      // academicYear='grade4_primary'
+      academicYear: 'grade4_primary',
+      academicTerm: 'term1',
+      courseIds: [String(sec2Course._id)],
+      subscriptionMethod: 'card',
+    }));
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toMatch(/سنتك|year|متاح/);
+  });
+
+  it('REGRESSION: accepts courseId whose targetYear matches the student academicYear', async () => {
+    const matchedCourse = await makeCourse({
+      instructor: inst._id, price: 100, isPublished: true, targetYear: 'grade4_primary',
+    });
+    const { POST } = await registerApi();
+    const res = await POST(registerReq({
+      ...VALID_BASE,
+      academicYear: 'grade4_primary',
+      academicTerm: 'term1',
+      email: 'matched-year@example.com',
+      courseIds: [String(matchedCourse._id)],
+      subscriptionMethod: 'card',
+    }));
+    expect(res.status).toBe(201);
+  });
+
+  it('REGRESSION: accepts courses with no targetYear (universal courses)', async () => {
+    const universalCourse = await makeCourse({
+      instructor: inst._id, price: 100, isPublished: true,
+      // no targetYear at all
+    });
+    const { POST } = await registerApi();
+    const res = await POST(registerReq({
+      ...VALID_BASE,
+      email: 'universal-year@example.com',
+      courseIds: [String(universalCourse._id)],
+      subscriptionMethod: 'card',
+    }));
+    expect(res.status).toBe(201);
+  });
+
   it('rejects when the course exists but is not published', async () => {
     const draft = await makeCourse({ instructor: inst._id, price: 200, isPublished: false });
     const { POST } = await registerApi();

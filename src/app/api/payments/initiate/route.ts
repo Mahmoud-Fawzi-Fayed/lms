@@ -87,26 +87,46 @@ export const POST = withAuth(async (req, user) => {
 
   const finalPrice = course.price === 0 ? 0 : (course.discountPrice ?? course.price);
 
-  // Free course - auto-enroll
+  // Free course - auto-enroll.
+  // BUG-FIX (concurrency): make the enroll path idempotent instead of relying
+  // on an early existence check (which races). The unique index on
+  // (user, course) is the source of truth — try to insert, swallow E11000.
   if (finalPrice === 0) {
-    const payment = await Payment.create({
-      user: user.id,
-      course: courseId,
-      amount: 0,
-      method: 'free',
-      status: 'paid',
-      paidAt: new Date(),
-    });
+    let wasNewEnrollment = false;
+    let enrollment;
+    try {
+      enrollment = await Enrollment.create({
+        user: user.id,
+        course: courseId,
+        status: 'active',
+        enrolledAt: new Date(),
+      });
+      wasNewEnrollment = true;
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        // Lost the race — another concurrent request already enrolled this user.
+        enrollment = await Enrollment.findOne({ user: user.id, course: courseId });
+      } else {
+        throw err;
+      }
+    }
 
-    await Enrollment.create({
-      user: user.id,
-      course: courseId,
-      payment: payment._id,
-      status: 'active',
-      enrolledAt: new Date(),
-    });
-
-    await Course.findByIdAndUpdate(courseId, { $inc: { enrollmentCount: 1 } });
+    // Only the winner creates the audit Payment row and bumps the count.
+    if (wasNewEnrollment && enrollment) {
+      const payment = await Payment.create({
+        user: user.id,
+        course: courseId,
+        amount: 0,
+        method: 'free',
+        status: 'paid',
+        paidAt: new Date(),
+      });
+      await Enrollment.updateOne(
+        { _id: enrollment._id },
+        { $set: { payment: payment._id } }
+      );
+      await Course.findByIdAndUpdate(courseId, { $inc: { enrollmentCount: 1 } });
+    }
 
     return apiSuccess({ enrolled: true, message: 'تم الاشتراك بنجاح (كورس مجاني)' });
   }

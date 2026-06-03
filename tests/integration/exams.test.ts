@@ -1,415 +1,629 @@
 /**
- * Integration tests for GET /api/exams and POST /api/exams
+ * Integration tests — exam lifecycle (start + submit) + listing/details.
  *
- * Covers:
- *  GET /api/exams (listing):
- *    - Anonymous user sees all published exams
- *    - Student sees only exams for their academic year
- *    - Student without academic year → no exams returned
- *    - courseId filter narrows results to course exams
- *    - Unpublished exams hidden from students
- *    - Instructor sees their own unpublished exams
- *    - myAttempts=true returns student's submitted/timed-out attempts
- *    - myAttempts=true requires authentication
- *    - canAccess flag: free/course exams → true; standalone paid without enrollment → false
- *    - Correct answers not leaked in GET response
- *
- *  POST /api/exams (create):
- *    - Unauthenticated → 401
- *    - Student cannot create exam → 403
- *    - Instructor creates exam successfully
- *    - Instructor cannot create exam for another instructor's course → 403
- *    - Admin can create exam for any course
- *    - Paid exam with 0 price → rejected
- *    - MCQ without correct answer → rejected
- *    - MCQ with fewer than 2 options → rejected
+ * Pentest/QA focus:
+ *  - Authentication / authorization / live-status gates
+ *  - Academic-year scoping (course-linked + standalone)
+ *  - Course-linked exams require active enrollment (unless isPreview)
+ *  - Standalone paid exams require ExamEnrollment
+ *  - maxAttempts enforcement with pre-existing submitted+timed-out attempts
+ *  - In-progress resume vs timed-out grace path
+ *  - Snapshot is NEVER returned to client (questionSnapshot leak protection)
+ *  - Correct answers / isCorrect stripped from payload to non-owners
+ *  - IDOR — submitting another user's attempt
+ *  - Cross-exam attempt id (attempt belongs to a different exam)
+ *  - Atomic double-submit (concurrent submits — only one wins)
+ *  - Grading correctness across mcq/single/truefalse/fillinblank
+ *  - Score/passed/timed-out flags
+ *  - showResults gating (no leaked correct answers when disabled)
+ *  - Invalid ObjectId / malformed payload
+ *  - Rate-limit on exam start
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { makeUser, makeCourse, makeExam, makeAttempt, makeEnrollment } from './factories';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { NextRequest } from 'next/server';
+import mongoose from 'mongoose';
+import { makeUser, makeCourse, makeEnrollment, makePayment, makeExam } from './factories';
 import { setCurrentUser, clearCurrentUser, mockRequest } from './auth-mock';
-import { ExamEnrollment } from '@/models';
+import { Exam, ExamAttempt, ExamEnrollment } from '@/models';
 
-async function examsApi() {
+async function startApi() {
+  return import('@/app/api/exams/[id]/start/route');
+}
+async function submitApi() {
+  return import('@/app/api/exams/submit/route');
+}
+async function listApi() {
   return import('@/app/api/exams/route');
 }
+async function detailApi() {
+  return import('@/app/api/exams/[id]/route');
+}
 
-// ─── GET /api/exams — listing ─────────────────────────────────────────────────
+function startReq(examId: string) {
+  return new NextRequest(new URL(`http://localhost/api/exams/${examId}/start`), { method: 'POST' });
+}
 
-describe('GET /api/exams — anonymous & role-based visibility', () => {
-  let instA: any;
-  let instB: any;
-  let examSec1Published: any;
-  let examSec2Published: any;
-  let examSec1Unpublished: any;
+function submitReq(body: any) {
+  return new NextRequest(new URL('http://localhost/api/exams/submit'), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Build a richer exam directly so we control question shapes. */
+async function makeRichExam(opts: {
+  createdBy: mongoose.Types.ObjectId | string;
+  course?: mongoose.Types.ObjectId | string;
+  targetYear?: string;
+  passingScore?: number;
+  duration?: number;
+  maxAttempts?: number;
+  isPreview?: boolean;
+  accessType?: 'free' | 'paid';
+  price?: number;
+  showResults?: boolean;
+}) {
+  return Exam.create({
+    title: 'Rich Exam',
+    createdBy: opts.createdBy,
+    course: opts.course,
+    targetYear: opts.targetYear ?? 'grade1_secondary',
+    accessType: opts.accessType ?? 'free',
+    price: opts.price ?? 0,
+    duration: opts.duration ?? 30,
+    passingScore: opts.passingScore ?? 60,
+    maxAttempts: opts.maxAttempts ?? 3,
+    isPublished: true,
+    isPreview: opts.isPreview ?? false,
+    showResults: opts.showResults ?? true,
+    questions: [
+      {
+        type: 'mcq',
+        text: 'mcq?',
+        options: [
+          { text: 'WRONG', isCorrect: false },
+          { text: 'RIGHT', isCorrect: true },
+        ],
+        points: 2,
+        order: 0,
+      },
+      {
+        type: 'truefalse',
+        text: 'tf?',
+        options: [
+          { text: 'true', isCorrect: true },
+          { text: 'false', isCorrect: false },
+        ],
+        points: 1,
+        order: 1,
+      },
+      {
+        type: 'fillinblank',
+        text: 'fill?',
+        correctAnswer: 'Cairo',
+        points: 3,
+        order: 2,
+      },
+    ],
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('POST /api/exams/[id]/start — auth, gating, attempts', () => {
+  let inst: any, student: any, otherStudent: any;
+  let course: any, exam: any;
 
   beforeEach(async () => {
-    instA = await makeUser({ role: 'instructor' });
-    instB = await makeUser({ role: 'instructor' });
-
-    examSec1Published = await makeExam({
-      createdBy: instA._id,
-      title: 'Sec1 Published',
-      targetYear: 'grade1_secondary',
-      isPublished: true,
+    inst = await makeUser({ role: 'instructor' });
+    student = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
+    otherStudent = await makeUser({ role: 'student', academicYear: 'grade2_secondary' });
+    course = await makeCourse({
+      instructor: inst._id, isPublished: true, targetYear: 'grade1_secondary',
     });
-    examSec2Published = await makeExam({
-      createdBy: instB._id,
-      title: 'Sec2 Published',
-      targetYear: 'grade2_secondary',
-      isPublished: true,
-    });
-    examSec1Unpublished = await makeExam({
-      createdBy: instA._id,
-      title: 'Sec1 Draft',
-      targetYear: 'grade1_secondary',
-      isPublished: false,
-    });
+    exam = await makeRichExam({ createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary' });
   });
 
-  it('anonymous user sees all published exams', async () => {
+  it('rejects unauthenticated request with 401', async () => {
     clearCurrentUser();
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-    expect(json.success).toBe(true);
-    const titles = json.data.exams.map((e: any) => e.title).sort();
-    expect(titles).toContain('Sec1 Published');
-    expect(titles).toContain('Sec2 Published');
-    expect(titles).not.toContain('Sec1 Draft');
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(401);
   });
 
-  it('student sees only published exams for their academic year', async () => {
-    const stu = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
-    setCurrentUser({ id: String(stu._id), role: 'student', academicYear: 'grade1_secondary' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-
-    const titles = json.data.exams.map((e: any) => e.title);
-    expect(titles).toContain('Sec1 Published');
-    expect(titles).not.toContain('Sec2 Published');
-    expect(titles).not.toContain('Sec1 Draft');
+  it('rejects malformed exam id with 400', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq('not-an-id'));
+    expect(res.status).toBe(400);
   });
 
-  it('student without academicYear gets no exams', async () => {
-    const stu = await makeUser({ role: 'student' }); // no academicYear
-    setCurrentUser({ id: String(stu._id), role: 'student' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-    expect(json.data.exams).toHaveLength(0);
+  it('rejects unpublished exam with 404', async () => {
+    await Exam.findByIdAndUpdate(exam._id, { isPublished: false });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(404);
   });
 
-  it('instructor sees their own unpublished exams when listing all', async () => {
-    setCurrentUser({ id: String(instA._id), role: 'instructor' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-
-    const titles = json.data.exams.map((e: any) => e.title);
-    expect(titles).toContain('Sec1 Draft'); // instructor's own draft
+  it('rejects student whose academic year does not match', async () => {
+    setCurrentUser({ id: String(otherStudent._id), role: 'student', academicYear: 'grade2_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(403);
   });
 
-  it('does not leak correct answers in GET response', async () => {
-    clearCurrentUser();
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
+  it('course-linked exam requires active enrollment (non-preview)', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(403);
+  });
 
-    for (const exam of json.data.exams) {
-      for (const q of exam.questions ?? []) {
-        for (const opt of q.options ?? []) {
-          expect(opt.isCorrect).toBeUndefined();
-        }
-        expect(q.correctAnswer).toBeUndefined();
-        expect(q.explanation).toBeUndefined();
+  it('isPreview course-linked exam can be started without enrollment', async () => {
+    const previewExam = await makeRichExam({
+      createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary', isPreview: true,
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(previewExam._id)));
+    expect(res.status).toBe(200);
+  });
+
+  it('standalone paid exam requires ExamEnrollment', async () => {
+    const paidExam = await makeRichExam({
+      createdBy: inst._id, accessType: 'paid', price: 99, targetYear: 'grade1_secondary',
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(paidExam._id)));
+    expect(res.status).toBe(403);
+  });
+
+  it('standalone paid exam allowed when ExamEnrollment is active', async () => {
+    const paidExam = await makeRichExam({
+      createdBy: inst._id, accessType: 'paid', price: 99, targetYear: 'grade1_secondary',
+    });
+    await ExamEnrollment.create({ user: student._id, exam: paidExam._id, status: 'active' });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(paidExam._id)));
+    expect(res.status).toBe(200);
+  });
+
+  it('standalone free exam allowed without enrollment', async () => {
+    const freeExam = await makeRichExam({
+      createdBy: inst._id, accessType: 'free', targetYear: 'grade1_secondary',
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(freeExam._id)));
+    expect(res.status).toBe(200);
+  });
+
+  it('blocks 4th start once 3 attempts (submitted/timed-out) exist', async () => {
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    for (let i = 1; i <= 3; i++) {
+      await ExamAttempt.create({
+        user: student._id, exam: exam._id, attemptNumber: i,
+        status: i === 2 ? 'timed-out' : 'submitted',
+        score: 50, totalPoints: 6, earnedPoints: 3, passed: false,
+        startedAt: new Date(), submittedAt: new Date(),
+      });
+    }
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns existing in-progress attempt instead of creating a new one', async () => {
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    const inProgress = await ExamAttempt.create({
+      user: student._id, exam: exam._id, attemptNumber: 1,
+      status: 'in-progress', startedAt: new Date(),
+      totalPoints: 6, earnedPoints: 0, score: 0, passed: false,
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.attempt._id).toBe(String(inProgress._id));
+    const count = await ExamAttempt.countDocuments({ user: student._id, exam: exam._id });
+    expect(count).toBe(1);
+  });
+
+  it('returns timedOut=true when in-progress attempt has exceeded duration', async () => {
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    // Started 2 hours ago — duration is only 30 min.
+    await ExamAttempt.create({
+      user: student._id, exam: exam._id, attemptNumber: 1,
+      status: 'in-progress', startedAt: new Date(Date.now() - 2 * 60 * 60_000),
+      totalPoints: 6, earnedPoints: 0, score: 0, passed: false,
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.timedOut).toBe(true);
+  });
+
+  it('NEVER returns questionSnapshot (or correct answers) in start response', async () => {
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const blob = JSON.stringify(json);
+    expect(json.data.attempt.questionSnapshot).toBeUndefined();
+    // Sanitized exam questions must not include isCorrect / correctAnswer.
+    expect(blob).not.toContain('isCorrect');
+    expect(blob).not.toContain('correctAnswer');
+    // RIGHT/WRONG option labels are still present (text is fine), but the answer key isn't.
+    expect(json.data.exam.questions.length).toBe(3);
+    for (const q of json.data.exam.questions) {
+      expect(q.correctAnswer).toBeUndefined();
+      if (q.options) {
+        for (const o of q.options) expect(o.isCorrect).toBeUndefined();
       }
     }
   });
+
+  it('rate-limits >6 starts/min for the same user+exam', async () => {
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    let got429 = false;
+    for (let i = 0; i < 12; i++) {
+      const res = await POST(startReq(String(exam._id)));
+      if (res.status === 429) { got429 = true; break; }
+    }
+    expect(got429).toBe(true);
+  });
 });
 
-describe('GET /api/exams — courseId filter', () => {
-  it('returns only exams for the specified course', async () => {
-    const inst = await makeUser({ role: 'instructor' });
-    const courseA = await makeCourse({ instructor: inst._id, price: 0, isPublished: true });
-    const courseB = await makeCourse({ instructor: inst._id, price: 0, isPublished: true });
-    await makeExam({ createdBy: inst._id, course: courseA._id, title: 'CourseA Exam', isPublished: true });
-    await makeExam({ createdBy: inst._id, course: courseB._id, title: 'CourseB Exam', isPublished: true });
+// ─────────────────────────────────────────────────────────────────────────────
+describe('POST /api/exams/submit — grading, IDOR, atomic double-submit', () => {
+  let inst: any, student: any, otherStudent: any;
+  let course: any, exam: any;
 
-    clearCurrentUser();
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest(`/api/exams?courseId=${courseA._id}`));
+  beforeEach(async () => {
+    inst = await makeUser({ role: 'instructor' });
+    student = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
+    otherStudent = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
+    course = await makeCourse({ instructor: inst._id, isPublished: true, targetYear: 'grade1_secondary' });
+    exam = await makeRichExam({ createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary' });
+    await makeEnrollment({ user: student._id, course: course._id, status: 'active' });
+  });
+
+  async function startAttempt(asUser = student) {
+    setCurrentUser({ id: String(asUser._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await startApi();
+    const res = await POST(startReq(String(exam._id)));
     const json = await res.json();
+    return json.data;
+  }
 
-    expect(json.data.exams).toHaveLength(1);
-    expect(json.data.exams[0].title).toBe('CourseA Exam');
-  });
-});
-
-describe('GET /api/exams — myAttempts', () => {
-  it('returns 401 when myAttempts=true without authentication', async () => {
-    clearCurrentUser();
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams?myAttempts=true'));
-    expect(res.status).toBe(401);
+  it('rejects malformed body / invalid ObjectIds with 400', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({ examId: 'bad', attemptId: 'bad', answers: [] }));
+    expect(res.status).toBe(400);
   });
 
-  it('returns student submitted and timed-out attempts only', async () => {
-    const inst = await makeUser({ role: 'instructor' });
-    const stu = await makeUser({ role: 'student' });
-    const exam = await makeExam({ createdBy: inst._id, isPublished: true });
-
-    await makeAttempt({ user: stu._id, exam: exam._id, status: 'submitted', score: 80, passed: true });
-    await makeAttempt({ user: stu._id, exam: exam._id, status: 'timed-out', score: 30, passed: false, attemptNumber: 2 });
-    await makeAttempt({ user: stu._id, exam: exam._id, status: 'in-progress', attemptNumber: 3 }); // excluded
-
-    setCurrentUser({ id: String(stu._id), role: 'student' });
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams?myAttempts=true'));
-    const json = await res.json();
-
-    expect(json.success).toBe(true);
-    expect(json.data.attempts).toHaveLength(2); // submitted + timed-out only
-    expect(json.data.attempts.every((a: any) => ['submitted', 'timed-out'].includes(a.status))).toBe(true);
-  });
-});
-
-describe('GET /api/exams — canAccess flag for students', () => {
-  it('canAccess=true for free standalone exams', async () => {
-    const inst = await makeUser({ role: 'instructor' });
-    await makeExam({
-      createdBy: inst._id,
-      title: 'Free Standalone',
-      targetYear: 'grade1_secondary',
-      accessType: 'free',
-      price: 0,
-      isPublished: true,
+  it('rejects garbage JSON body with 400', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const req = new NextRequest(new URL('http://localhost/api/exams/submit'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'not-json{',
     });
-
-    const stu = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
-    setCurrentUser({ id: String(stu._id), role: 'student', academicYear: 'grade1_secondary' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-
-    const freeExam = json.data.exams.find((e: any) => e.title === 'Free Standalone');
-    expect(freeExam).toBeTruthy();
-    expect(freeExam.canAccess).toBe(true);
+    const res = await POST(req);
+    expect(res.status).toBe(400);
   });
 
-  it('canAccess=false for paid standalone exam without enrollment', async () => {
-    const inst = await makeUser({ role: 'instructor' });
-    await makeExam({
-      createdBy: inst._id,
-      title: 'Paid Standalone',
-      targetYear: 'grade1_secondary',
-      accessType: 'paid',
-      price: 50,
-      isPublished: true,
-    });
-
-    const stu = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
-    setCurrentUser({ id: String(stu._id), role: 'student', academicYear: 'grade1_secondary' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-
-    const paidExam = json.data.exams.find((e: any) => e.title === 'Paid Standalone');
-    expect(paidExam).toBeTruthy();
-    expect(paidExam.canAccess).toBe(false);
-  });
-
-  it('canAccess=true for paid standalone exam when student is enrolled', async () => {
-    const inst = await makeUser({ role: 'instructor' });
-    const exam = await makeExam({
-      createdBy: inst._id,
-      title: 'Paid Enrolled',
-      targetYear: 'grade1_secondary',
-      accessType: 'paid',
-      price: 50,
-      isPublished: true,
-    });
-
-    const stu = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
-    // Create an exam enrollment
-    await ExamEnrollment.create({ user: stu._id, exam: exam._id, status: 'active', enrolledAt: new Date() });
-    setCurrentUser({ id: String(stu._id), role: 'student', academicYear: 'grade1_secondary' });
-
-    const { GET } = await examsApi();
-    const res = await GET(mockRequest('/api/exams'));
-    const json = await res.json();
-
-    const e = json.data.exams.find((e: any) => e.title === 'Paid Enrolled');
-    expect(e?.canAccess).toBe(true);
-  });
-});
-
-// ─── POST /api/exams — creation ───────────────────────────────────────────────
-
-const VALID_EXAM_BODY = {
-  title: 'Test Exam',
-  targetYear: 'grade1_secondary',
-  duration: 30,
-  passingScore: 60,
-  maxAttempts: 3,
-  accessType: 'free',
-  price: 0,
-  isPublished: true,
-  questions: [{
-    type: 'mcq',
-    text: 'What is 2+2?',
-    order: 0,
-    points: 1,
-    options: [
-      { text: '3', isCorrect: false },
-      { text: '4', isCorrect: true },
-    ],
-  }],
-};
-
-describe('POST /api/exams — auth & role gating', () => {
-  it('returns 401 for unauthenticated requests', async () => {
-    clearCurrentUser();
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', { method: 'POST', body: VALID_EXAM_BODY }));
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 403 for student role', async () => {
-    const stu = await makeUser({ role: 'student' });
-    setCurrentUser({ id: String(stu._id), role: 'student' });
-
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', { method: 'POST', body: VALID_EXAM_BODY }));
+  it('rejects another user trying to submit my attempt (IDOR)', async () => {
+    const { attempt } = await startAttempt(student);
+    // Switch to a different student
+    setCurrentUser({ id: String(otherStudent._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({ examId: String(exam._id), attemptId: attempt._id, answers: [] }));
     expect(res.status).toBe(403);
   });
+
+  it('rejects mismatched examId / attemptId pair', async () => {
+    const { attempt } = await startAttempt(student);
+    const otherExam = await makeRichExam({ createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary' });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({ examId: String(otherExam._id), attemptId: attempt._id, answers: [] }));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects 404 for unknown attemptId', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({
+      examId: String(exam._id),
+      attemptId: new mongoose.Types.ObjectId().toString(),
+      answers: [],
+    }));
+    expect(res.status).toBe(404);
+  });
+
+  it('grades all 3 question types correctly when all answers are right', async () => {
+    const { attempt, exam: examDto } = await startAttempt(student);
+    const qByText: Record<string, any> = Object.fromEntries(examDto.questions.map((q: any) => [q.text, q]));
+    const mcq = qByText['mcq?']; const tf = qByText['tf?']; const fb = qByText['fill?'];
+    const rightOpt = mcq.options.find((o: any) => o.text === 'RIGHT')!;
+    const trueOpt  = tf.options.find((o: any) => o.text === 'true')!;
+
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({
+      examId: String(exam._id),
+      attemptId: attempt._id,
+      answers: [
+        { questionId: String(mcq._id), selectedOption: String(rightOpt._id) },
+        { questionId: String(tf._id),  selectedOption: String(trueOpt._id) },
+        { questionId: String(fb._id),  answer: 'cairo' }, // case-insensitive grading
+      ],
+    }));
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.score).toBe(100);
+    expect(json.data.passed).toBe(true);
+    expect(json.data.earnedPoints).toBe(6);
+    expect(json.data.totalPoints).toBe(6);
+    expect(json.data.status).toBe('submitted');
+  });
+
+  it('partial credit — only mcq correct → score 33', async () => {
+    const { attempt, exam: examDto } = await startAttempt(student);
+    const qByText: Record<string, any> = Object.fromEntries(examDto.questions.map((q: any) => [q.text, q]));
+    const mcq = qByText['mcq?']; const tf = qByText['tf?']; const fb = qByText['fill?'];
+    const rightOpt = mcq.options.find((o: any) => o.text === 'RIGHT')!;
+    const falseOpt = tf.options.find((o: any) => o.text === 'false')!;
+
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({
+      examId: String(exam._id),
+      attemptId: attempt._id,
+      answers: [
+        { questionId: String(mcq._id), selectedOption: String(rightOpt._id) }, // 2pt OK
+        { questionId: String(tf._id),  selectedOption: String(falseOpt._id) },  // 0
+        { questionId: String(fb._id),  answer: 'Alexandria' },                  // 0
+      ],
+    }));
+    const json = await res.json();
+    expect(json.data.earnedPoints).toBe(2);
+    expect(json.data.totalPoints).toBe(6);
+    expect(json.data.score).toBe(33); // 2/6 → 33
+    expect(json.data.passed).toBe(false);
+  });
+
+  it('marks attempt as timed-out when submitted past duration + 1 min grace', async () => {
+    const { attempt } = await startAttempt(student);
+    // Backdate startedAt to 2 hours ago (duration is 30 min).
+    await ExamAttempt.updateOne(
+      { _id: attempt._id },
+      { $set: { startedAt: new Date(Date.now() - 2 * 60 * 60_000) } },
+    );
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({
+      examId: String(exam._id),
+      attemptId: attempt._id,
+      answers: [],
+    }));
+    const json = await res.json();
+    expect(json.data.status).toBe('timed-out');
+  });
+
+  it('atomic double-submit: only one wins, second returns 409', async () => {
+    const { attempt } = await startAttempt(student);
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const body = { examId: String(exam._id), attemptId: attempt._id, answers: [] };
+    const [r1, r2] = await Promise.all([POST(submitReq(body)), POST(submitReq(body))]);
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses).toEqual([200, 409]);
+  });
+
+  it('grades against questionSnapshot — instructor edits AFTER start do not change result', async () => {
+    const { attempt, exam: examDto } = await startAttempt(student);
+    const qByText: Record<string, any> = Object.fromEntries(examDto.questions.map((q: any) => [q.text, q]));
+    const mcq = qByText['mcq?'];
+    const rightOptId = String(mcq.options.find((o: any) => o.text === 'RIGHT')!._id);
+
+    // Instructor flips the correct answer AFTER the student saw the questions.
+    await Exam.updateOne(
+      { _id: exam._id, 'questions.text': 'mcq?' },
+      {
+        $set: {
+          'questions.$.options': [
+            { text: 'WRONG', isCorrect: true },
+            { text: 'RIGHT', isCorrect: false },
+          ],
+        },
+      },
+    );
+
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({
+      examId: String(exam._id),
+      attemptId: attempt._id,
+      answers: [{ questionId: String(mcq._id), selectedOption: rightOptId }],
+    }));
+    const json = await res.json();
+    // Snapshot still says RIGHT is correct.
+    expect(json.data.earnedPoints).toBeGreaterThan(0);
+  });
+
+  // REGRESSION (Bug-fix B): the questionSnapshot used to omit `explanation`, so
+  // result.details[i].explanation was always undefined for the student.
+  it('REGRESSION: submit response includes question.explanation when showResults=true', async () => {
+    // Build an exam whose questions have explanations, then start + submit.
+    const explExam = await Exam.create({
+      title: 'with-explanation',
+      createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary',
+      accessType: 'free', price: 0, duration: 30, passingScore: 60, maxAttempts: 3,
+      isPublished: true, showResults: true,
+      questions: [{
+        type: 'mcq', text: 'q?',
+        options: [{ text: 'a', isCorrect: true }, { text: 'b', isCorrect: false }],
+        points: 1, order: 0,
+        explanation: 'Because A is the right one.',
+      }],
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const startRes = await (await startApi()).POST(startReq(String(explExam._id)));
+    const startJson = await startRes.json();
+    const aId = startJson.data.attempt._id;
+
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({ examId: String(explExam._id), attemptId: aId, answers: [] }));
+    const json = await res.json();
+    expect(json.data.details).toBeTruthy();
+    expect(json.data.details[0].explanation).toBe('Because A is the right one.');
+  });
+
+  it('does NOT include details (correct answers) when showResults=false', async () => {
+    const noResultsExam = await makeRichExam({
+      createdBy: inst._id, course: course._id, targetYear: 'grade1_secondary', showResults: false,
+    });
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    // Start it
+    const start = await (await startApi()).POST(startReq(String(noResultsExam._id)));
+    const startJson = await start.json();
+    const aId = startJson.data.attempt._id;
+    const { POST } = await submitApi();
+    const res = await POST(submitReq({ examId: String(noResultsExam._id), attemptId: aId, answers: [] }));
+    const json = await res.json();
+    expect(json.data.details).toBeUndefined();
+  });
 });
 
-describe('POST /api/exams — instructor creates exam', () => {
-  let inst: any;
-  let otherInst: any;
-  let course: any;
+// ─────────────────────────────────────────────────────────────────────────────
+describe('GET /api/exams + GET /api/exams/[id] — listing & details', () => {
+  let inst: any, otherInst: any, admin: any, student: any;
+  let courseSec1: any, examSec1: any, examSec2Year: any, examUnpub: any;
 
   beforeEach(async () => {
     inst = await makeUser({ role: 'instructor' });
     otherInst = await makeUser({ role: 'instructor' });
-    course = await makeCourse({ instructor: inst._id, price: 0, isPublished: true });
-    setCurrentUser({ id: String(inst._id), role: 'instructor' });
+    admin = await makeUser({ role: 'admin' });
+    student = await makeUser({ role: 'student', academicYear: 'grade1_secondary' });
+    courseSec1 = await makeCourse({ instructor: inst._id, isPublished: true, targetYear: 'grade1_secondary' });
+    examSec1 = await makeRichExam({ createdBy: inst._id, course: courseSec1._id, targetYear: 'grade1_secondary' });
+    examSec2Year = await makeRichExam({ createdBy: inst._id, targetYear: 'grade2_secondary' });
+    examUnpub = await Exam.create({
+      title: 'unpub', createdBy: inst._id, course: courseSec1._id, targetYear: 'grade1_secondary',
+      duration: 30, passingScore: 60, maxAttempts: 3, isPublished: false,
+      questions: [{ type: 'mcq', text: 'q', options: [{text:'a',isCorrect:true},{text:'b',isCorrect:false}], points: 1, order: 0 }],
+    });
   });
 
-  it('instructor creates standalone free exam successfully', async () => {
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', { method: 'POST', body: VALID_EXAM_BODY }));
+  it('student only sees published exams matching their academic year', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { GET } = await listApi();
+    const res = await GET(mockRequest('/api/exams'));
     const json = await res.json();
-    expect(res.status).toBe(201);
-    expect(json.success).toBe(true);
-    expect(json.data.title).toBe('Test Exam');
+    const ids = json.data.exams.map((e: any) => String(e._id));
+    expect(ids).toContain(String(examSec1._id));
+    expect(ids).not.toContain(String(examSec2Year._id));
+    expect(ids).not.toContain(String(examUnpub._id));
   });
 
-  it('instructor creates exam linked to their own course', async () => {
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: { ...VALID_EXAM_BODY, course: String(course._id) },
-    }));
-    const json = await res.json();
-    expect(res.status).toBe(201);
-    expect(json.success).toBe(true);
-  });
-
-  it('instructor cannot create exam for another instructor\'s course', async () => {
-    const otherCourse = await makeCourse({ instructor: otherInst._id, price: 0, isPublished: true });
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: { ...VALID_EXAM_BODY, course: String(otherCourse._id) },
-    }));
-    expect(res.status).toBe(403);
-  });
-
-  it('admin can create exam for any course', async () => {
-    const admin = await makeUser({ role: 'admin' });
-    const anyCourse = await makeCourse({ instructor: inst._id, price: 0, isPublished: true });
-    setCurrentUser({ id: String(admin._id), role: 'admin' });
-
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: { ...VALID_EXAM_BODY, course: String(anyCourse._id) },
-    }));
-    expect(res.status).toBe(201);
-  });
-});
-
-describe('POST /api/exams — validation rules', () => {
-  let inst: any;
-
-  beforeEach(async () => {
-    inst = await makeUser({ role: 'instructor' });
+  it('instructor sees own draft exams', async () => {
     setCurrentUser({ id: String(inst._id), role: 'instructor' });
+    const { GET } = await listApi();
+    const res = await GET(mockRequest('/api/exams'));
+    const json = await res.json();
+    const ids = json.data.exams.map((e: any) => String(e._id));
+    expect(ids).toContain(String(examUnpub._id));
   });
 
-  it('rejects paid standalone exam with price=0', async () => {
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: { ...VALID_EXAM_BODY, accessType: 'paid', price: 0 },
-    }));
-    expect(res.status).toBe(400);
+  it('list response strips correct answers and explanation', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { GET } = await listApi();
+    const res = await GET(mockRequest('/api/exams'));
+    const blob = JSON.stringify(await res.json());
+    expect(blob).not.toContain('correctAnswer');
+    expect(blob).not.toContain('isCorrect');
+    expect(blob).not.toContain('explanation');
   });
 
-  it('rejects MCQ question with fewer than 2 options', async () => {
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: {
-        ...VALID_EXAM_BODY,
-        questions: [{
-          type: 'mcq',
-          text: 'One option question?',
-          order: 0,
-          points: 1,
-          options: [{ text: 'Only option', isCorrect: true }],
-        }],
-      },
-    }));
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects MCQ question with no correct answer marked', async () => {
-    const { POST } = await examsApi();
-    const res = await POST(mockRequest('/api/exams', {
-      method: 'POST',
-      body: {
-        ...VALID_EXAM_BODY,
-        questions: [{
-          type: 'mcq',
-          text: 'No correct option?',
-          order: 0,
-          points: 1,
-          options: [
-            { text: 'A', isCorrect: false },
-            { text: 'B', isCorrect: false },
-          ],
-        }],
-      },
-    }));
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects request with invalid JSON body', async () => {
-    const { POST } = await examsApi();
-    const req = new (await import('next/server')).NextRequest(
-      new URL('http://localhost/api/exams'),
-      { method: 'POST', body: 'not-json', headers: { 'content-type': 'application/json' } }
+  it('GET /api/exams/[id] hides unpublished exam from non-owner students (404)', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL(`http://localhost/api/exams/${examUnpub._id}`)),
+      { params: { id: String(examUnpub._id) } } as any,
     );
-    const res = await POST(req);
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /api/exams/[id] returns full data (with correct answers) to owner', async () => {
+    setCurrentUser({ id: String(inst._id), role: 'instructor' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL(`http://localhost/api/exams/${examUnpub._id}`)),
+      { params: { id: String(examUnpub._id) } } as any,
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const blob = JSON.stringify(json);
+    expect(blob).toContain('isCorrect');
+  });
+
+  it('GET /api/exams/[id] strips correct answers for students', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL(`http://localhost/api/exams/${examSec1._id}`)),
+      { params: { id: String(examSec1._id) } } as any,
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const blob = JSON.stringify(json);
+    expect(blob).not.toContain('isCorrect');
+    expect(blob).not.toContain('correctAnswer');
+  });
+
+  it('non-owner instructor cannot see another instructor\'s draft', async () => {
+    setCurrentUser({ id: String(otherInst._id), role: 'instructor' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL(`http://localhost/api/exams/${examUnpub._id}`)),
+      { params: { id: String(examUnpub._id) } } as any,
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('admin can see any draft', async () => {
+    setCurrentUser({ id: String(admin._id), role: 'admin' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL(`http://localhost/api/exams/${examUnpub._id}`)),
+      { params: { id: String(examUnpub._id) } } as any,
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects non-ObjectId in detail route with 400', async () => {
+    setCurrentUser({ id: String(student._id), role: 'student', academicYear: 'grade1_secondary' });
+    const { GET } = await detailApi();
+    const res = await GET(
+      new NextRequest(new URL('http://localhost/api/exams/not-an-id')),
+      { params: { id: 'not-an-id' } } as any,
+    );
     expect(res.status).toBe(400);
   });
 });

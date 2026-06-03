@@ -34,7 +34,16 @@ let mongod: MongoMemoryServer;
 mongod = await MongoMemoryServer.create();
 process.env.MONGODB_URI = mongod.getUri();
 process.env.NEXTAUTH_SECRET = 'integration-test-secret';
+process.env.NEXTAUTH_URL ||= 'http://localhost:3000';
 process.env.CONTENT_SECRET = 'a'.repeat(64);
+// Provide stub Paymob config so validatePaymobConfig() passes during tests.
+// We never call real Paymob from integration tests — initiatePayment is mocked.
+process.env.PAYMOB_API_KEY ||= 'test-paymob-api-key';
+process.env.PAYMOB_INTEGRATION_ID_CARD ||= '0';
+process.env.PAYMOB_INTEGRATION_ID_WALLET ||= '0';
+process.env.PAYMOB_INTEGRATION_ID_FAWRY ||= '0';
+process.env.PAYMOB_IFRAME_ID ||= '0';
+process.env.PAYMOB_HMAC_SECRET ||= 'test-paymob-hmac-secret';
 
 beforeAll(async () => {
   if (mongoose.connection.readyState === 0) {

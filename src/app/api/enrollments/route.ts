@@ -50,34 +50,44 @@ export const POST = withAuth(async (req, user) => {
     return apiError('هذا الكورس غير متاح لسنتك الدراسية', 403);
   }
 
-  const enrollment = await Enrollment.findOne({
-    user: user.id,
-    course: courseId,
-    status: 'active',
-  });
+  // BUG-FIX: use an atomic findOneAndUpdate with $addToSet + $set instead of
+  // findOne()+save(). The previous implementation had a TOCTOU race — N parallel
+  // completions of the same lesson could VersionError out of save() and double-count
+  // the lesson on retry. $addToSet is server-side de-duplicating and the operation
+  // is single-statement atomic.
+  const lessonObjId = lessonId as any;
+  const enrollment = await Enrollment.findOneAndUpdate(
+    { user: user.id, course: courseId, status: 'active' },
+    {
+      $addToSet: { 'progress.completedLessons': lessonObjId },
+      $set:      { 'progress.lastLesson': lessonObjId },
+    },
+    { new: true }
+  );
 
   if (!enrollment) {
     return apiError('أنت غير مشترك في هذا الكورس', 403);
   }
 
-  // Add lesson to completed if not already there
-  const lessonObjId = lessonId as any;
-  if (!enrollment.progress.completedLessons.some((l: any) => l.toString() === lessonObjId)) {
-    enrollment.progress.completedLessons.push(lessonObjId);
-  }
-  enrollment.progress.lastLesson = lessonObjId;
-
-  // Calculate percentage
+  // Recompute percentage from the just-persisted state and write it atomically.
+  // (We do it in a separate update so the math reflects post-$addToSet length.)
   if (course) {
     const totalLessons = course.modules.reduce(
-      (sum: number, mod: any) => sum + mod.lessons.length,
+      (sum: number, mod: any) => sum + (mod.lessons?.length || 0),
       0
     );
-    enrollment.progress.percentage = totalLessons > 0
-      ? Math.round((enrollment.progress.completedLessons.length / totalLessons) * 100)
+    const completedCount = enrollment.progress.completedLessons.length;
+    const percentage = totalLessons > 0
+      ? Math.round((completedCount / totalLessons) * 100)
       : 0;
+    if (percentage !== enrollment.progress.percentage) {
+      await Enrollment.updateOne(
+        { _id: enrollment._id },
+        { $set: { 'progress.percentage': percentage } }
+      );
+      enrollment.progress.percentage = percentage;
+    }
   }
 
-  await enrollment.save();
   return apiSuccess({ progress: enrollment.progress });
 });

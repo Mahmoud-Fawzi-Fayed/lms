@@ -96,8 +96,11 @@ export const DELETE = withAuth(async (_req, user) => {
   }
 
   const { Enrollment, Payment } = await import('@/models');
+  // BUG-FIX: Enrollment.user (not Enrollment.student) — model has no `student` field,
+  // so the previous query always returned 0 and let users with active enrollments
+  // self-delete during the 5-minute rollback window.
   const [enrollCount, payCount] = await Promise.all([
-    Enrollment.countDocuments({ student: user.id }),
+    Enrollment.countDocuments({ user: user.id }),
     Payment.countDocuments({ user: user.id }),
   ]);
 

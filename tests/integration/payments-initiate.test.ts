@@ -131,7 +131,9 @@ describe('POST /api/payments/initiate — enrollment guards', () => {
     }));
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.success).toBe(false);
+    // apiError() returns { error: string } (no `success` field). Check for the
+    // error message instead of an absent `success` flag.
+    expect(json.error).toBeTruthy();
   });
 });
 

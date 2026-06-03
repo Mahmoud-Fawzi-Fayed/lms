@@ -5,11 +5,18 @@ import { Course } from '@/models';
 import { registerSchema } from '@/lib/validations';
 import { rateLimit, apiError, apiSuccess } from '@/lib/api-helpers';
 import { validatePaymobConfig } from '@/lib/paymob';
+import { getAcademicYearVariants } from '@/lib/academic-year';
 
 export async function POST(req: NextRequest) {
   try {
-    // Rate limit registration
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
+    // BUG-FIX: normalize IP from X-Forwarded-For list (take first hop) and fall back
+    // to X-Real-IP. Previous implementation used the raw header value, so the same
+    // client behind a proxy chain could fragment into multiple rate-limit buckets.
+    const xff = req.headers.get('x-forwarded-for');
+    const ip =
+      (xff ? xff.split(',')[0].trim() : '') ||
+      req.headers.get('x-real-ip') ||
+      'unknown';
     if (!rateLimit(`register:${ip}`, 5, 60 * 60 * 1000)) {
       return apiError('محاولات تسجيل كثيرة جداً. حاول مرة أخرى لاحقاً.', 429);
     }
@@ -24,16 +31,27 @@ export async function POST(req: NextRequest) {
 
     await connectDB();
 
-    // Validate each selected course exists and is published
+    // Validate each selected course exists, is published, AND targets the
+    // student's declared academic year (or has no targetYear, i.e. universal).
+    // BUG-FIX: previously any published course was accepted, so a student could
+    // register against courses for a different year, then immediately fail every
+    // year-gated content/payment check. Catch the mismatch here.
     const courseIds = parsed.data.courseIds || [];
     if (courseIds.length > 0) {
+      const yearVariants = getAcademicYearVariants(parsed.data.academicYear);
       const courses = await Course.find({
         _id: { $in: courseIds },
         isPublished: true,
+        $or: [
+          { targetYear: { $exists: false } },
+          { targetYear: null },
+          { targetYear: '' },
+          { targetYear: { $in: yearVariants } },
+        ],
       }).select('_id').lean();
 
       if (courses.length !== courseIds.length) {
-        return apiError('أحد الكورسات المحددة غير موجود أو غير منشور', 404);
+        return apiError('أحد الكورسات المحددة غير موجود أو غير متاح لسنتك الدراسية', 404);
       }
     }
 

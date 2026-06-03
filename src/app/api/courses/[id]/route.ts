@@ -2,7 +2,6 @@ import { NextRequest } from 'next/server';
 import { withAuth, apiError, apiSuccess, getAuthUser } from '@/lib/api-helpers';
 import { Course, Enrollment } from '@/models';
 import connectDB from '@/lib/db';
-import mongoose from 'mongoose';
 import { isSameAcademicYear, normalizeAcademicYear } from '@/lib/academic-year';
 import fs from 'fs/promises';
 import path from 'path';
@@ -17,10 +16,13 @@ export async function GET(
 
     const { id } = params;
 
-    // Support both ObjectId and slug
-    const filter: any = mongoose.Types.ObjectId.isValid(id)
-      ? { _id: id }
-      : { slug: id };
+    // Support both ObjectId and slug.
+    // BUG-FIX: `mongoose.Types.ObjectId.isValid` accepts ANY 12-byte string,
+    // which means a 12-char ASCII slug ("hello-world!") would be misrouted to
+    // an `_id` lookup and may match unintended documents. Use a strict 24-hex
+    // check so only real ObjectIds use the `_id` filter.
+    const isHexObjectId = typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id);
+    const filter: any = isHexObjectId ? { _id: id } : { slug: id };
 
     // Allow instructor/admin to view their own unpublished courses
     const user = await getAuthUser(req);

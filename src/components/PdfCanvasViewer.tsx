@@ -55,7 +55,14 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
       setError('');
       try {
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+        // BUG-FIX: PDF.js refuses to load if the API and worker versions don't
+        // match. We point at the static /pdf.worker.min.mjs (kept in sync via
+        // the postinstall hook), but as a runtime safety-net we also append
+        // the API version so a stale CDN/edge cache invalidates and so that an
+        // out-of-sync deploy fails LOUDLY in the network panel instead of the
+        // viewer just showing "Failed to load".
+        const workerUrl = `/pdf.worker.min.mjs?v=${(pdfjsLib as any).version || '0'}`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
         // Protected PDFs: pre-fetch bytes in the main thread so the browser
         // sends the correct Sec-Fetch-* headers (dest=empty, mode=cors,
@@ -66,10 +73,35 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         if (isProtected) {
           const resp = await fetch(src, {
             credentials: 'include',
+            // mode/cache pinned so Sec-Fetch-* headers are deterministic and
+            // an HTTP cache layer can't return stale bytes from a previous
+            // (now-rotated) token.
+            mode: 'cors',
+            cache: 'no-store',
             headers: { 'X-Content-Request': '1' },
           });
-          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          docSource = { data: new Uint8Array(await resp.arrayBuffer()) };
+          if (!resp.ok) {
+            // Surface a more specific error in the console so the operator
+            // can quickly tell apart 401 (login expired) vs 403 (token invalid)
+            // vs 404 (file missing) vs 423 (multi-IP lockout) vs 5xx.
+            console.error(
+              `[PdfCanvasViewer] content fetch failed: ${resp.status} ${resp.statusText} for ${src}`
+            );
+            throw new Error(`HTTP ${resp.status}`);
+          }
+          // Defense: ensure the response is actually a PDF. If the content API
+          // unexpectedly returned an HTML error page (e.g. JSON error body
+          // wrapped by a misconfigured proxy), pdf.js would throw an opaque
+          // "InvalidPDFException" — surface a clearer error instead.
+          const ct = resp.headers.get('content-type') || '';
+          const arrayBuf = await resp.arrayBuffer();
+          if (!ct.includes('application/pdf')) {
+            console.error(
+              `[PdfCanvasViewer] response is not a PDF (content-type=${ct})`
+            );
+            throw new Error('not a PDF response');
+          }
+          docSource = { data: new Uint8Array(arrayBuf) };
         } else {
           docSource = { url: src };
         }

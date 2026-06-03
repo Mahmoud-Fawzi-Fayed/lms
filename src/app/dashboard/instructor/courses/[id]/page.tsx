@@ -77,7 +77,7 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
 
   useEffect(() => { fetchCourse(); }, [id]);
 
-  const fetchCourse = async () => {
+  const fetchCourse = async (): Promise<any | null> => {
     try {
       const res = await fetch(`/api/courses/${id}`);
       const data = await res.json();
@@ -147,12 +147,14 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
             })),
           })),
         });
+        return c;
       }
     } catch {
       toast.error(t('فشل تحميل الكورس', 'Failed to load course'));
     } finally {
       setLoading(false);
     }
+    return null;
   };
 
   const handleSave = async () => {
@@ -281,7 +283,17 @@ export default function EditCoursePage({ params }: { params: { id: string } }) {
         setFilePreviewUrls(prev => { const updated = { ...prev }; delete updated[key]; return updated; });
         // Clear progress indicator
         setUploadProgress(prev => { const updated = { ...prev }; delete updated[key]; return updated; });
-        await fetchCourse();
+        const refreshed = await fetchCourse();
+        // BUG-FIX: auto-trigger the preview AFTER the course refetch so the
+        // instructor immediately sees the freshly uploaded PDF/video instead
+        // of having to click "معاينة" manually. We resolve the lessonId from
+        // the just-refreshed course tree (the in-memory `form.modules` may
+        // still be stale at this microtask).
+        const lessonId = refreshed?.modules?.[mi]?.lessons?.[li]?._id;
+        if (lessonId) {
+          // Fire and forget — errors surface inline via setUploadError.
+          void loadFilePreview(mi, li, lessonId, lessonType);
+        }
       } else {
         setUploadError(data.error || t('فشل رفع الملف', 'File upload failed'));
       }

@@ -76,6 +76,12 @@ const examAttemptSchema = new Schema<IExamAttempt>(
 examAttemptSchema.index({ user: 1, exam: 1 });
 examAttemptSchema.index({ exam: 1, score: -1 }); // For leaderboard
 examAttemptSchema.index({ course: 1, user: 1 });
+// BUG-FIX (concurrency): a unique compound index on (user, exam, attemptNumber)
+// ensures that two parallel POST /exams/:id/start calls cannot both succeed in
+// creating attempts with the same attemptNumber, which previously bypassed
+// maxAttempts enforcement under load. The route handler catches the duplicate
+// key error (E11000) and returns a friendly retry response.
+examAttemptSchema.index({ user: 1, exam: 1, attemptNumber: 1 }, { unique: true });
 
 const ExamAttempt: Model<IExamAttempt> =
   mongoose.models.ExamAttempt ||

@@ -23,6 +23,10 @@ yarn-error.log*
 
 # Uploads (user content)
 uploads/
+# Legacy thumbnail volume — public/thumbnails is mounted as a Docker volume
+# (see docker-compose.yml) and contains runtime user uploads, not source.
+# Keep the directory itself (.gitkeep) but ignore the UUID-named uploads.
+public/thumbnails/thumb_*
 
 # OS
 .DS_Store
