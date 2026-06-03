@@ -16,16 +16,28 @@ import { watermarkPdf } from '@/lib/pdf-watermark';
 // Range/stream video requests are NOT counted here (a single video play issues
 // dozens of Range requests); they're protected by Sec-Fetch-Dest=video instead.
 const tokenHits = new Map<string, { count: number; firstSeen: number }>();
-const watermarkedPdfCache = new Map<string, { bytes: Uint8Array; expiresAt: number }>();
-// Small lenient cap: React strict-mode in dev double-mounts, browser back/forward
-// re-renders the PDF, and pdf.js can issue a second fetch on parse errors.
-// 3 hits/hour still blocks any meaningful mass-scraping (a course with 100
-// PDF lessons would need 100 tokens × 1 hour to scrape — and each token is
-// fingerprint+IP+user bound), while letting normal users navigate freely.
-const TOKEN_RAW_LIMIT = 3;
-const TOKEN_RAW_WINDOW = 60 * 60_000; // 1 hour
-const WATERMARK_CACHE_TTL = 5 * 60_000; // 5 minutes
-const WATERMARK_CACHE_MAX = 24;
+
+// PERF: LRU cache of watermarked PDF bytes.
+// Cache key is (lessonId, userId, mtimeMs) — NOT the token — so the cache
+// survives token rotation. The previous implementation included the token in
+// the key, which meant every page reload (= new token) re-ran the full 100ms-
+// 1s watermark on the server, blocking the event loop and slowing the rest
+// of the site for every other user.
+type WmEntry = { bytes: Uint8Array; expiresAt: number };
+const watermarkedPdfCache = new Map<string, WmEntry>();
+
+// In-flight dedupe: if N concurrent requests for the same key arrive while
+// the watermark is still being generated, they all await the same Promise
+// instead of each spawning its own pdf-lib parse. This was the source of the
+// "site freezes when one student opens a PDF" symptom — multiple parallel
+// React strict-mode double-mounts could trigger 4-6 watermark passes for a
+// single page open.
+const watermarkInFlight = new Map<string, Promise<Uint8Array>>();
+
+const TOKEN_RAW_LIMIT      = 3;
+const TOKEN_RAW_WINDOW     = 60 * 60_000;        // 1 hour
+const WATERMARK_CACHE_TTL  = 30 * 60_000;        // 30 minutes (was 5)
+const WATERMARK_CACHE_MAX  = 200;                // (was 24) — fits a busy class
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now();
@@ -55,13 +67,18 @@ function getCachedWatermarkedPdf(key: string): Uint8Array | null {
     watermarkedPdfCache.delete(key);
     return null;
   }
+  // LRU touch: re-insert at the end so this entry isn't evicted before
+  // less-recently-used ones.
+  watermarkedPdfCache.delete(key);
+  watermarkedPdfCache.set(key, hit);
   return hit.bytes;
 }
 
 function setCachedWatermarkedPdf(key: string, bytes: Uint8Array) {
-  if (watermarkedPdfCache.size >= WATERMARK_CACHE_MAX) {
+  while (watermarkedPdfCache.size >= WATERMARK_CACHE_MAX) {
     const oldestKey = watermarkedPdfCache.keys().next().value;
-    if (oldestKey) watermarkedPdfCache.delete(oldestKey);
+    if (!oldestKey) break;
+    watermarkedPdfCache.delete(oldestKey);
   }
   watermarkedPdfCache.set(key, { bytes, expiresAt: Date.now() + WATERMARK_CACHE_TTL });
 }
@@ -316,31 +333,42 @@ export async function GET(
         if (lstat.isSymbolicLink()) return apiError('forbidden', 403);
         if (!lstat.isFile()) return apiError('not a file', 400);
         const stamp = user.email || user.id;
-        // Richer second line: IP + UTC timestamp, so a leaked PDF traces back to
-        // the exact session and not just "some download by this user".
-        const ts = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
-        const meta = `${clientIp(req) || 'unknown'} · ${ts}`;
-        const cacheKey = `${token}:${lstat.mtimeMs}:${stamp}`;
+
+        // PERF: cache key is (lessonId, userId, mtimeMs) — NOT the token.
+        // Tokens rotate per request (random nonce), so keying by token meant
+        // the cache never hit and every reload re-watermarked from scratch.
+        // The watermark text only depends on the user + the file's mtime.
+        const cacheKey = `${decoded.lessonId}:${user.id}:${lstat.mtimeMs}`;
+
         let stamped = getCachedWatermarkedPdf(cacheKey);
         if (!stamped) {
-          const original = await fs.readFile(resolvedFilePath);
-          stamped = await watermarkPdf(original, stamp, meta);
-          setCachedWatermarkedPdf(cacheKey, stamped);
+          // PERF: in-flight dedupe — if 5 concurrent requests come in for the
+          // same (user, lesson) before the watermark finishes, only one runs;
+          // the others await the same promise. Without this, React strict-mode
+          // double-mounts, browser back/forward, or a quick page refresh would
+          // each trigger an independent pdf-lib parse on the server, freezing
+          // the event loop for hundreds of ms × N requests.
+          let pending = watermarkInFlight.get(cacheKey);
+          if (!pending) {
+            // Use a slightly-stable timestamp so the watermark is the same for
+            // back-to-back views in the cache window (the audit log records
+            // the per-request timestamp + IP separately, so we don't lose any
+            // forensic data by stamping once per cache window).
+            const ts   = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+            const meta = `${clientIp(req) || 'unknown'} · ${ts}`;
+            pending = (async () => {
+              const original = await fs.readFile(resolvedFilePath);
+              const out = await watermarkPdf(original, stamp, meta);
+              setCachedWatermarkedPdf(cacheKey, out);
+              return out;
+            })();
+            watermarkInFlight.set(cacheKey, pending);
+            pending.finally(() => watermarkInFlight.delete(cacheKey));
+          }
+          stamped = await pending;
         }
         await logAccess(user.id, decoded.courseId, decoded.lessonId, 'raw', req, stamped.byteLength);
-        return new NextResponse(Buffer.from(stamped) as any, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/pdf',
-            'Content-Length': String(stamped.byteLength),
-            'Cache-Control': 'no-store, no-cache, must-revalidate, private',
-            'Pragma': 'no-cache',
-            'Content-Disposition': 'inline',
-            'X-Content-Type-Options': 'nosniff',
-            'X-Frame-Options': 'DENY',
-            'Content-Security-Policy': "frame-ancestors 'none'",
-          },
-        });
+        return servePdfBytes(req, stamped);
       } catch (err) {
         console.error('[content] watermark serve failed, falling back to raw stream:', err);
         // fall through to streaming the original file
@@ -357,6 +385,55 @@ export async function GET(
     console.error('Content serve error:', error);
     return apiError('فشل تحميل المحتوى', 500);
   }
+}
+
+// ── Watermarked-PDF responder with Range support ─────────────────────────────
+// PERF: serve the in-memory watermarked buffer with HTTP Range support so PDF.js
+// on the client can progressively fetch (instead of downloading the whole 10MB
+// file before showing page 1). Falls back to a single full response when the
+// client doesn't send a Range header.
+function servePdfBytes(req: NextRequest, bytes: Uint8Array): NextResponse {
+  const range = req.headers.get('range');
+  const total = bytes.byteLength;
+
+  const baseHeaders: Record<string, string> = {
+    'Content-Type': 'application/pdf',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+    'Pragma': 'no-cache',
+    'Content-Disposition': 'inline',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Content-Security-Policy': "frame-ancestors 'none'",
+    'Accept-Ranges': 'bytes',
+  };
+
+  if (range) {
+    const m = range.match(/bytes=(\d+)-?(\d*)/);
+    if (m) {
+      const start = parseInt(m[1], 10);
+      const end   = m[2] ? Math.min(parseInt(m[2], 10), total - 1) : total - 1;
+      if (Number.isNaN(start) || start >= total || start > end) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${total}` },
+        });
+      }
+      const slice = bytes.subarray(start, end + 1);
+      return new NextResponse(Buffer.from(slice) as any, {
+        status: 206,
+        headers: {
+          ...baseHeaders,
+          'Content-Length': String(slice.byteLength),
+          'Content-Range':  `bytes ${start}-${end}/${total}`,
+        },
+      });
+    }
+  }
+
+  return new NextResponse(Buffer.from(bytes) as any, {
+    status: 200,
+    headers: { ...baseHeaders, 'Content-Length': String(total) },
+  });
 }
 
 // ── Audit log ────────────────────────────────────────────────────────────────

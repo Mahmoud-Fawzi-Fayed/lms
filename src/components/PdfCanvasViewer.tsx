@@ -64,54 +64,73 @@ export default function PdfCanvasViewer({ src, protected: isProtected = true, ma
         const workerUrl = `/pdf.worker.min.mjs?v=${(pdfjsLib as any).version || '0'}`;
         pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-        // Protected PDFs: pre-fetch bytes in the main thread so the browser
-        // sends the correct Sec-Fetch-* headers (dest=empty, mode=cors,
-        // site=same-origin) plus our custom X-Content-Request header.
-        // PDF.js fetches from its web-worker context which can produce
-        // different Sec-Fetch-Dest values that fail the content-API check.
+        // Protected PDFs: do a tiny HEAD-style probe (1-byte Range) so we can
+        // verify the response is a real PDF and that the server supports
+        // Range requests (added in the cache-key fix). If both, hand the URL
+        // straight to PDF.js so it can progressively fetch with its own
+        // Range-based loader — first page paints in ~200ms instead of waiting
+        // for the entire 10 MB file to arrive.
+        //
+        // We can't do a HEAD because the content API only accepts GET (and
+        // verifies our custom X-Content-Request header on each call). Instead
+        // we GET bytes 0-0 — 1 byte over the wire is plenty to check headers,
+        // and if Range is supported we get a 206; if not we get 200 + full
+        // body and we discard it then re-fetch in full-file mode.
         let docSource: { url: string } | { data: Uint8Array };
+        let useRange = false;
+
         if (isProtected) {
-          const resp = await fetch(src, {
+          const probe = await fetch(src, {
             credentials: 'include',
-            // mode/cache pinned so Sec-Fetch-* headers are deterministic and
-            // an HTTP cache layer can't return stale bytes from a previous
-            // (now-rotated) token.
             mode: 'cors',
             cache: 'no-store',
-            headers: { 'X-Content-Request': '1' },
+            headers: { 'X-Content-Request': '1', Range: 'bytes=0-0' },
           });
-          if (!resp.ok) {
-            // Surface a more specific error in the console so the operator
-            // can quickly tell apart 401 (login expired) vs 403 (token invalid)
-            // vs 404 (file missing) vs 423 (multi-IP lockout) vs 5xx.
+          if (!probe.ok && probe.status !== 206) {
             console.error(
-              `[PdfCanvasViewer] content fetch failed: ${resp.status} ${resp.statusText} for ${src}`
+              `[PdfCanvasViewer] content fetch failed: ${probe.status} ${probe.statusText} for ${src}`
             );
-            throw new Error(`HTTP ${resp.status}`);
+            throw new Error(`HTTP ${probe.status}`);
           }
-          // Defense: ensure the response is actually a PDF. If the content API
-          // unexpectedly returned an HTML error page (e.g. JSON error body
-          // wrapped by a misconfigured proxy), pdf.js would throw an opaque
-          // "InvalidPDFException" — surface a clearer error instead.
-          const ct = resp.headers.get('content-type') || '';
-          const arrayBuf = await resp.arrayBuffer();
+          const ct = probe.headers.get('content-type') || '';
           if (!ct.includes('application/pdf')) {
-            console.error(
-              `[PdfCanvasViewer] response is not a PDF (content-type=${ct})`
-            );
+            console.error(`[PdfCanvasViewer] response is not a PDF (content-type=${ct})`);
             throw new Error('not a PDF response');
           }
-          docSource = { data: new Uint8Array(arrayBuf) };
+          useRange = probe.status === 206 && /bytes/i.test(probe.headers.get('accept-ranges') || '');
+
+          if (useRange) {
+            // PDF.js will issue its own Range requests via the URL.
+            // Discard the 1-byte probe body.
+            try { await probe.body?.cancel(); } catch { /* noop */ }
+            docSource = { url: src };
+          } else {
+            // Fallback: server didn't return Range (older deployment or proxy
+            // stripped the header). Fetch the whole thing once.
+            const full = await fetch(src, {
+              credentials: 'include',
+              mode: 'cors',
+              cache: 'no-store',
+              headers: { 'X-Content-Request': '1' },
+            });
+            if (!full.ok) throw new Error(`HTTP ${full.status}`);
+            docSource = { data: new Uint8Array(await full.arrayBuffer()) };
+          }
         } else {
           docSource = { url: src };
+          useRange = true;
         }
 
         const loadingTask = pdfjsLib.getDocument({
           ...docSource,
-          // When we have the full bytes already, disable range/stream so
-          // PDF.js doesn't try to make additional network requests.
-          disableAutoFetch: isProtected,
-          disableStream: isProtected,
+          // Pass our custom header so PDF.js's internal Range fetches still
+          // satisfy the content API's X-Content-Request guard.
+          ...(useRange && isProtected ? { httpHeaders: { 'X-Content-Request': '1' }, withCredentials: true } : {}),
+          // When useRange is true we let PDF.js stream chunks lazily. When
+          // false we already have the whole file in memory — disable stream
+          // so PDF.js doesn't try extra network requests.
+          disableAutoFetch: !useRange,
+          disableStream:    !useRange,
         });
         loadTaskRef.current = loadingTask;
         const pdf = await loadingTask.promise;
